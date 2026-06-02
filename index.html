@@ -103,13 +103,62 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 const PEOPLE = {amy:'Amy',jingyi:'静仪'};
 const WEEKDAYS = ['日','一','二','三','四','五','六'];
 
+// ============ Supabase 云端同步 ============
+const SUPABASE_URL = 'https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+let state={};
+let loadingKeys=new Set();
+
+async function apiFetch(method,path,body){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,headers:{
+      'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,
+      'Content-Type':'application/json','Prefer':'return=representation'
+    },body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null}
+  const txt=await r.text();
+  return txt?JSON.parse(txt):null;
+}
+
+async function loadFromCloud(){
+  try{
+    const rows=await apiFetch('GET','/checklist_state?select=check_key,checked');
+    if(!rows)return;
+    state={};
+    rows.forEach(r=>{state[r.check_key]=r.checked});
+  }catch(e){console.error('Load error',e)}
+}
+
+async function toggleCheck(key){
+  const newVal=!state[key];
+  // 乐观更新UI
+  state[key]=newVal;
+
+  // 同步到云端 (upsert)
+  try{
+    await apiFetch('POST','/checklist_state',{
+      check_key:key,checked:newVal,updated_at:new Date().toISOString()
+    });
+  }catch(e){
+    // 失败时回滚
+    state[key]=!newVal;
+    console.error('Sync error',e);
+  }
+}
+
+function getCheck(key){return !!state[key]}
+
+// 定时从云端拉取更新（3秒一次）
+setInterval(loadFromCloud,3000);
+
 function todayKey(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 function weekKey(d){
   const dt=new Date(d);
-  // ISO周：周一为一周开始
   const day=dt.getDay()||7;
   const mon=new Date(dt);
   mon.setDate(dt.getDate()-day+1);
@@ -118,20 +167,6 @@ function weekKey(d){
 function formatDate(d){
   const dt=new Date(d);
   return `${dt.getMonth()+1}/${dt.getDate()}(${WEEKDAYS[dt.getDay()]})`;
-}
-
-const STATE_KEY='checklist_state_v2';
-let state={};
-function loadState(){
-  try{state=JSON.parse(localStorage.getItem(STATE_KEY)||'{}')}catch(e){state={}}
-}
-function saveState(){
-  localStorage.setItem(STATE_KEY,JSON.stringify(state));
-}
-function getCheck(key){return !!state[key]}
-function toggleCheck(key){
-  state[key]=!state[key];
-  saveState();
 }
 
 // ============ 数据定义 ============
@@ -456,10 +491,13 @@ function updateHeaderDate(){
   document.getElementById('headerDate').textContent=`${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
 }
 
-loadState();
-updateHeaderDate();
-renderTab('daily',false);
-setInterval(updateHeaderDate,60000);
+async function init(){
+  await loadFromCloud();
+  updateHeaderDate();
+  renderTab('daily',false);
+  setInterval(updateHeaderDate,60000);
+}
+init();
 </script>
 </body>
 </html>
