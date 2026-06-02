@@ -172,6 +172,19 @@ const DAILY_SECTIONS = [
       {id:'d12c',text:'开船次日 — 再次确认离港无异常',sub:'核查次日状态，有异常立即跟进',resp:'Jamin',time:'次日'},
     ]
   },
+  {
+    id:'d13', title:'异常通知节点检查', badge:'daily', priority:true,
+    items:[
+      {id:'d13a',text:'核查异常是否按节点通知到位',sub:'查验/延误/甩柜等异常，确认是否在规定时间内通知客户和客服',resp:'Jamin'},
+    ]
+  },
+  {
+    id:'d14', title:'下一水清单通知', badge:'daily',
+    note:'根据每水船截关时间确定通知节点，不固定',
+    items:[
+      {id:'d14a',text:'确认下一水船期清单已通知相关人员',sub:'按截关前节点通知操作/客服/客户',resp:'Jamin'},
+    ]
+  },
 ];
 
 const WEEKLY_SECTIONS = [
