@@ -150,8 +150,14 @@ async function toggleCheck(key){
 
 function getCheck(key){return !!state[key]}
 
-// 定时从云端拉取更新（3秒一次）
-setInterval(loadFromCloud,3000);
+// 不再自动轮询，改为：
+// 1. 页面加载时拉取一次
+// 2. 切换日期时拉取
+// 3. 手动点击刷新按钮拉取
+// 4. 写入时即时推送（乐观更新）
+// 这样可以大幅降低API请求次数（从~10,000次/天降到~100次/天）
+
+function refreshFromCloud(){ loadFromCloud().then(()=>renderCurrentTab()); }
 
 function todayKey(){
   const d=new Date();
@@ -439,7 +445,7 @@ function renderDaySelector(tab){
 
 function selectDay(tab,key){
   selectedDay[tab]=key;
-  renderTab(tab,true);
+  loadFromCloud().then(()=>renderTab(tab,true));
 }
 
 function getSections(tab){
