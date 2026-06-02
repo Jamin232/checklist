@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>综合操作港后+关务checklist</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px;-webkit-tap-highlight-color:transparent}
+.header{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;padding:16px 16px 10px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
+.summary{display:flex;gap:10px;padding:12px 16px;background:#fff;position:sticky;top:64px;z-index:9;border-bottom:0.5px solid #eee}
+.summary .card{flex:1;text-align:center;padding:10px 6px;border-radius:10px;background:#f8f9fb}
+.summary .card .num{font-size:22px;font-weight:700}
+.summary .card .lbl{font-size:11px;color:#888;margin-top:2px}
+.summary .card.done .num{color:#0a8043}
+.summary .card.todo .num{color:#e37400}
+.summary .card.rate .num{color:#1a73e8}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:128px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.wk-btn.active{background:#1a73e8;color:#fff;font-weight:600}
+.day-tabs{display:flex;background:#fff;position:sticky;top:170px;z-index:7;border-bottom:0.5px solid #eee}
+.day-tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.day-tab.active{color:#1a73e8;border-bottom-color:#1a73e8;font-weight:600}
+.day-tab.today{color:#1a73e8}
+.day-tab.past{color:#bbb}
+.section{margin:8px 10px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.section-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fafbfc;border-bottom:0.5px solid #f0f0f0}
+.section-title{font-size:14px;font-weight:600}
+.section-count{font-size:11px;color:#888}
+.item{display:flex;align-items:center;padding:10px 12px;border-bottom:0.5px solid #f5f5f5;transition:background .15s}
+.item:last-child{border-bottom:none}
+.item:active{background:#f5f8ff}
+.item.locked{opacity:.45;pointer-events:none}
+.chk-wrap{flex-shrink:0;width:28px;height:28px;margin-right:10px;position:relative}
+.chk{width:24px;height:24px;border-radius:6px;border:2px solid #ccc;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.chk.checked{background:#0a8043;border-color:#0a8043}
+.chk.checked::after{content:'✓';color:#fff;font-size:14px;font-weight:700}
+.item-body{flex:1;min-width:0}
+.item-text{font-size:13px;line-height:1.45;color:#333;white-space:pre-line}
+.empty-state{text-align:center;padding:40px 20px;color:#aaa;font-size:14px}
+.btn-refresh{position:fixed;bottom:20px;right:16px;width:44px;height:44px;border-radius:50%;background:#1a73e8;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(26,115,232,.3);z-index:100;display:flex;align-items:center;justify-content:center}
+.btn-refresh:active{transform:scale(.9)}
+.sync-status{position:fixed;bottom:24px;left:16px;font-size:11px;color:#888;background:rgba(255,255,255,.9);padding:4px 10px;border-radius:10px;z-index:100}
+</style>
+</head>
+<body>
+<div class="header"><h1>综合操作港后+关务checklist</h1><div class="sub">A岗</div></div>
+<div class="summary">
+  <div class="card done"><div class="num" id="doneCount">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoCount">0</div><div class="lbl">待核查</div></div>
+  <div class="card rate"><div class="num" id="ratePct">0%</div><div class="lbl">完成率</div></div>
+</div>
+<div class="week-selector" id="weekSelector"></div>
+<div class="day-tabs" id="dayTabs"></div>
+<div id="content"></div>
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步云端数据">⟳</button>
+<div class="sync-status" id="syncStatus">● 就绪</div>
+
+<script>
+const TABLE_NAME='zh_ganghou';
+const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+const DAY_NAMES=['周一','周二','周三','周四','周五'];
+let state={},selectedWeek=null,selectedDay=1;
+
+function getTodayWeekKey(){
+  const d=new Date();const dow=d.getDay()||7;
+  const mon=new Date(d);mon.setDate(d.getDate()-dow+1);
+  return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+}
+function getTodayDayIndex(){const d=new Date();const dow=d.getDay();return dow===0?7:dow;}
+
+function buildWeekList(){
+  const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
+  let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
+  while(d<=end){
+    const endD=new Date(d);endD.setDate(d.getDate()+6);
+    const wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    weeks.push({key:wk,label:`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`});
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
+
+const ITEMS=[
+  {id:'h1',text:'轨迹更新：D1早上11点前，D2-6早上12点前',days:[1,2,3,4,5]},
+  {id:'h2',text:'轨迹排查：子单号提取&签收排查、预计签收时间漏缺排查、断更子单号登记及异常件提交（先排查共享表主单号，再导子单号排查）',days:[1,2,3,4,5]},
+  {id:'h3',text:'查验订单重点跟进：追踪查验进展（有实质进展发机器人通知、无实质进展的在客服群发通知）',days:[1,2,3,4,5]},
+  {id:'h4',text:'异常件跟进：处理时效、跟进内容是否合格、是否超期（2天处理一次，需1个月内完结）',days:[1,3,5]},
+  {id:'h5',text:'费用录入：扣货拦截费等目的港异常费用',days:[1,3,5]},
+  {id:'h6',text:'时效分析表：港后时效、全段时效（周会分享）',days:[2]},
+  {id:'h7',text:'清关时效：当周分析上周的，到港后2个自然日（含）内完成清关放行。（查验订单剔除）（留意备注到清关资料表格）',days:[2]},
+  {id:'h8',text:'转运时效：当周分析上周的，到仓后1个工作日完成转运（即完成提取）。（查验订单剔除）（留意备注到清关资料表格）',days:[2]},
+  {id:'h9',text:'销售、客服协作反馈，代理异常反馈（每周五）',days:[5]},
+  {id:'h10',text:'每天完成时效预警',days:[1,2,3,4,5]},
+  {id:'h11',text:'清关资料制作+预报发送（清关资料、分货明细、BOL、提单）（留意自税及卡派特殊备注）',days:[1,2,3,4,5]},
+  {id:'h12',text:'税金确认+税单上传系统（自税订单税金、品名附加费录入）',days:[1,2,3,4,5]},
+  {id:'h13',text:'报关底单、提单上传+检查、协助财务开报关发票（离港后7天内）',days:[1,3,5]},
+  {id:'h14',text:'目的港账单检查：自税订单税金（空运按照渠道自税+SEND进口商为是）、查验订单的查验相关费用是否收取',days:[1,3,5]},
+];
+
+async function apiFetch(method,path,body){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{method,headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},body:body?JSON.stringify(body):undefined});
+  if(!r.ok){console.error('API error',r.status);return null}
+  const txt=await r.text();return txt?JSON.parse(txt):null;
+}
+async function loadFromCloud(){
+  try{const rows=await apiFetch('GET',`/${TABLE_NAME}?select=check_key,checked`);if(!rows)return;state={};rows.forEach(r=>{state[r.check_key]=r.checked});}catch(e){console.error('Load error',e)}
+}
+async function toggleCheck(key){const newVal=!state[key];state[key]=newVal;try{await apiFetch('POST',`/${TABLE_NAME}`,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});}catch(e){state[key]=!newVal;}}
+async function refreshFromCloud(){document.getElementById('syncStatus').textContent='⟳ 同步中...';await loadFromCloud();document.getElementById('syncStatus').textContent='● 已同步';render();setTimeout(()=>{document.getElementById('syncStatus').textContent='● 就绪'},2000);}
+
+function renderWeekSelector(){
+  const weeks=buildWeekList(),todayWk=getTodayWeekKey();
+  if(!selectedWeek) selectedWeek=todayWk;
+  document.getElementById('weekSelector').innerHTML=weeks.map(w=>`<button class="wk-btn${w.key===selectedWeek?' active':''}${w.key===todayWk?' today':''}" onclick="selectWeek('${w.key}')">${w.label}</button>`).join('');
+  requestAnimationFrame(()=>{const act=document.getElementById('weekSelector').querySelector('.wk-btn.active');if(act)act.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});});
+}
+function renderDayTabs(){
+  const todayIdx=getTodayDayIndex(),todayWk=getTodayWeekKey();
+  if(!selectedDay||(selectedWeek===todayWk&&selectedDay!==todayIdx&&todayIdx>=1&&todayIdx<=5)) selectedDay=todayIdx;
+  if(selectedDay<1)selectedDay=1;if(selectedDay>5)selectedDay=5;
+  document.getElementById('dayTabs').innerHTML=DAY_NAMES.map((n,i)=>{const idx=i+1;const isToday=(selectedWeek===todayWk&&idx===todayIdx);const isPast=(selectedWeek<todayWk)||(selectedWeek===todayWk&&idx<todayIdx);let cls='day-tab';if(idx===selectedDay)cls+=' active';if(isToday)cls+=' today';if(isPast)cls+=' past';return `<div class="${cls}" onclick="selectDay(${idx})">${n}</div>`;}).join('');
+}
+function selectWeek(wk){selectedWeek=wk;render();}
+function selectDay(d){selectedDay=d;render();}
+
+function render(){
+  renderWeekSelector();renderDayTabs();
+  const todayIdx=getTodayDayIndex(),todayWk=getTodayWeekKey();
+  const isLocked=(selectedWeek<todayWk)||(selectedWeek===todayWk&&selectedDay<todayIdx);
+  let displayItems=ITEMS.filter(item=>item.days.includes(selectedDay));
+  let total=displayItems.length,done=displayItems.filter(item=>state[`${selectedWeek}_d${selectedDay}_${item.id}`]).length;
+  document.getElementById('doneCount').textContent=done;
+  document.getElementById('todoCount').textContent=total-done;
+  document.getElementById('ratePct').textContent=total>0?Math.round(done/total*100)+'%':'--';
+  const cont=document.getElementById('content');
+  if(displayItems.length===0){cont.innerHTML='<div class="empty-state">当天无检查事项</div>';return;}
+  cont.innerHTML=`<div class="section"><div class="section-header"><div class="section-title">当日事项</div><div class="section-count">${done}/${total}</div></div>${displayItems.map(item=>{const key=`${selectedWeek}_d${selectedDay}_${item.id}`;const checked=!!state[key];return `<div class="item${isLocked?' locked':''}" onclick="${isLocked?'':'toggleItem(\''+key+'\')'}"><div class="chk-wrap"><div class="chk${checked?' checked':''}"></div></div><div class="item-body"><div class="item-text">${item.text.replace(/\n/g,'<br>')}</div></div></div>`;}).join('')}</div>`;
+}
+async function toggleItem(key){await toggleCheck(key);render();}
+async function init(){await loadFromCloud();render();}
+init();
+</script>
+</body>
+</html>
