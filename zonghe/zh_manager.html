@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>综合操作组检查清单 - 主管&经理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px;-webkit-tap-highlight-color:transparent}
+.header{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;padding:16px 16px 10px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
+.summary{display:flex;gap:10px;padding:12px 16px;background:#fff;position:sticky;top:64px;z-index:9;border-bottom:0.5px solid #eee}
+.summary .card{flex:1;text-align:center;padding:10px 6px;border-radius:10px;background:#f8f9fb}
+.summary .card .num{font-size:22px;font-weight:700}
+.summary .card .lbl{font-size:11px;color:#888;margin-top:2px}
+.summary .card.done .num{color:#0a8043}
+.summary .card.todo .num{color:#e37400}
+.summary .card.rate .num{color:#1a73e8}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:128px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.wk-btn.active{background:#1a73e8;color:#fff;font-weight:600}
+.day-tabs{display:flex;background:#fff;position:sticky;top:170px;z-index:7;border-bottom:0.5px solid #eee}
+.day-tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.day-tab.active{color:#1a73e8;border-bottom-color:#1a73e8;font-weight:600}
+.day-tab.today{color:#1a73e8}
+.day-tab.past{color:#bbb}
+.section{margin:8px 10px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.section-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fafbfc;border-bottom:0.5px solid #f0f0f0}
+.section-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}
+.section-title .star{color:#e74c3c}
+.section-count{font-size:11px;color:#888}
+.item{display:flex;align-items:center;padding:10px 12px;border-bottom:0.5px solid #f5f5f5;transition:background .15s}
+.item:last-child{border-bottom:none}
+.item:active{background:#f5f8ff}
+.item.locked{opacity:.45;pointer-events:none}
+.item.locked .chk{border-color:#ddd!important;background:#f5f5f5!important}
+.chk-wrap{flex-shrink:0;width:28px;height:28px;margin-right:10px;position:relative}
+.chk{width:24px;height:24px;border-radius:6px;border:2px solid #ccc;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.chk.checked{background:#0a8043;border-color:#0a8043}
+.chk.checked::after{content:'✓';color:#fff;font-size:14px;font-weight:700}
+.chk:hover{border-color:#1a73e8}
+.chk:active{transform:scale(.9)}
+.item-body{flex:1;min-width:0}
+.item-text{font-size:13px;line-height:1.45;color:#333;white-space:pre-line}
+.item-owner{font-size:11px;color:#1a73e8;margin-top:2px;font-weight:500}
+.empty-state{text-align:center;padding:40px 20px;color:#aaa;font-size:14px}
+.btn-refresh{position:fixed;bottom:20px;right:16px;width:44px;height:44px;border-radius:50%;background:#1a73e8;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(26,115,232,.3);z-index:100;display:flex;align-items:center;justify-content:center}
+.btn-refresh:active{transform:scale(.9)}
+.sync-status{position:fixed;bottom:24px;left:16px;font-size:11px;color:#888;background:rgba(255,255,255,.9);padding:4px 10px;border-radius:10px;z-index:100}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>综合操作组检查清单</h1>
+  <div class="sub">主管&经理 · Nicole & Jamie</div>
+</div>
+<div class="summary">
+  <div class="card done"><div class="num" id="doneCount">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoCount">0</div><div class="lbl">待核查</div></div>
+  <div class="card rate"><div class="num" id="ratePct">0%</div><div class="lbl">完成率</div></div>
+</div>
+<div class="week-selector" id="weekSelector"></div>
+<div class="day-tabs" id="dayTabs"></div>
+<div id="content"></div>
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步云端数据">⟳</button>
+<div class="sync-status" id="syncStatus">● 就绪</div>
+
+<script>
+// ============ 数据定义 ============
+const TABLE_NAME = 'zh_manager';
+const SUPABASE_URL = 'https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+// D1-D5 表示周一到周五，☑ 表示该事项在该天需要执行
+// owner 为空表示共同负责
+const SECTIONS = [
+  {
+    title: 'Nicole 负责',
+    owner: 'Nicole',
+    items: [
+      {id:'n1',text:'DW时间检查\n1、无预计派送时间，DW时间段是否面临超期\n2、有预计派送时间，DW时间段是否准确',owner:'Nicole',days:[1,2,3,4,5]},
+      {id:'n2',text:'目的港账单（空运按照渠道自税+SEND进口商为是）、查验订单的查验费是否收取',owner:'Nicole',days:[2]},
+      {id:'n3',text:'时效预警：产品确认黄、蓝订单，红色订单需填写原因',owner:'Nicole',days:[1,2,3,4,5]},
+      {id:'n4',text:'单询订单盘查',owner:'Nicole',days:[5]},
+      {id:'n5',text:'每周查验数据分享到MT群',owner:'Nicole',days:[4]},
+      {id:'n6',text:'异常件检查（处理时效、跟进内容是否合格）',owner:'Nicole',days:[2,4]},
+      {id:'n7',text:'每周报关底单上传检查',owner:'Nicole',days:[5]},
+    ]
+  },
+  {
+    title: 'Jamie 负责',
+    owner: 'Jamie',
+    items: [
+      {id:'j1',text:'每周审单完成率（标签类型）',owner:'Jamie',days:[1,2,3,4,5]},
+      {id:'j2',text:'港前的轨迹完成率',owner:'Jamie',days:[1,2,3,4,5]},
+      {id:'j3',text:'投保',owner:'Jamie',days:[1,2,3,4,5]},
+      {id:'j4',text:'时效预警：黄色订单需要升级处理',owner:'Jamie',days:[1,2,3,4,5]},
+      {id:'j5',text:'每周航班表更新==销售大群',owner:'Jamie',days:[1]},
+      {id:'j6',text:'每周SEND成本分析==SEND内部',owner:'Jamie',days:[2]},
+      {id:'j7',text:'每周空运优秀时效分享==销售大群',owner:'Jamie',days:[2]},
+      {id:'j8',text:'每周SEND时效分享==SEND内部',owner:'Jamie',days:[3]},
+      {id:'j9',text:'每周空运自拼时效分享==市场部',owner:'Jamie',days:[5]},
+    ]
+  }
+];
+
+// ============ 核心逻辑 ============
+const DAY_NAMES = ['周一','周二','周三','周四','周五'];
+let state = {};
+let selectedWeek = null;
+let selectedDay = 1; // 默认周一
+
+function getTodayWeekKey(){
+  const d=new Date();
+  const dow=d.getDay()||7;
+  const mon=new Date(d); mon.setDate(d.getDate()-dow+1);
+  return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+}
+function getTodayDayIndex(){ const d=new Date(); const dow=d.getDay(); return dow===0?7:dow; }
+function isToday(dayIdx){ return selectedWeek===getTodayWeekKey() && dayIdx===getTodayDayIndex(); }
+
+// 生成周列表：从6月到12月
+function buildWeekList(){
+  const weeks=[];
+  const start=new Date(2026,5,1); // 6月1日
+  const end=new Date(2026,11,31); // 12月31日
+  let d=new Date(start);
+  // 找到第一个周一
+  const fd=d.getDay(); d.setDate(d.getDate()-(fd===0?6:fd-1));
+  while(d<=end){
+    const endD=new Date(d); endD.setDate(d.getDate()+6);
+    const wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const label=`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`;
+    weeks.push({key:wk,label});
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
+
+// Supabase API
+async function apiFetch(method,path,body){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,headers:{
+      'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,
+      'Content-Type':'application/json','Prefer':'return=representation'
+    },body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null}
+  const txt=await r.text();
+  return txt?JSON.parse(txt):null;
+}
+async function loadFromCloud(){
+  try{
+    const rows=await apiFetch('GET',`/${TABLE_NAME}?select=check_key,checked`);
+    if(!rows)return;
+    state={}; rows.forEach(r=>{state[r.check_key]=r.checked});
+  }catch(e){console.error('Load error',e)}
+}
+async function toggleCheck(key){
+  const newVal=!state[key]; state[key]=newVal;
+  try{
+    await apiFetch('POST',`/${TABLE_NAME}`,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});
+  }catch(e){state[key]=!newVal;console.error('Sync error',e)}
+}
+async function refreshFromCloud(){
+  document.getElementById('syncStatus').textContent='⟳ 同步中...';
+  await loadFromCloud();
+  document.getElementById('syncStatus').textContent='● 已同步';
+  render();
+  setTimeout(()=>{document.getElementById('syncStatus').textContent='● 就绪'},2000);
+}
+
+// 渲染
+function renderWeekSelector(){
+  const weeks=buildWeekList();
+  const todayWk=getTodayWeekKey();
+  if(!selectedWeek) selectedWeek=todayWk;
+  const cont=document.getElementById('weekSelector');
+  cont.innerHTML=weeks.map(w=>`<button class="wk-btn${w.key===selectedWeek?' active':''}${w.key===todayWk?' today':''}" onclick="selectWeek('${w.key}')">${w.label}</button>`).join('');
+  requestAnimationFrame(()=>{
+    const act=cont.querySelector('.wk-btn.active');
+    if(act) act.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+  });
+}
+function renderDayTabs(){
+  const todayIdx=getTodayDayIndex();
+  const todayWk=getTodayWeekKey();
+  const cont=document.getElementById('dayTabs');
+  if(!selectedDay || (selectedWeek===getTodayWeekKey() && selectedDay!==todayIdx && getTodayDayIndex()>=1 && getTodayDayIndex()<=5)){
+    selectedDay=getTodayDayIndex();
+  }
+  if(selectedDay<1) selectedDay=1;
+  if(selectedDay>5) selectedDay=5;
+  cont.innerHTML=DAY_NAMES.map((n,i)=>{
+    const idx=i+1;
+    const isToday=(selectedWeek===todayWk && idx===todayIdx);
+    const isPast=(selectedWeek<todayWk)||(selectedWeek===todayWk && idx<todayIdx);
+    let cls='day-tab';
+    if(idx===selectedDay) cls+=' active';
+    if(isToday) cls+=' today';
+    if(isPast) cls+=' past';
+    return `<div class="${cls}" onclick="selectDay(${idx})">${n}</div>`;
+  }).join('');
+}
+function selectWeek(wk){selectedWeek=wk;render();}
+function selectDay(d){selectedDay=d;render();}
+
+function render(){
+  renderWeekSelector();
+  renderDayTabs();
+  const todayIdx=getTodayDayIndex();
+  const todayWk=getTodayWeekKey();
+  const isPastWeek=selectedWeek<todayWk;
+  const isPastDay=selectedWeek===todayWk && selectedDay<todayIdx;
+  const isLocked=isPastWeek||isPastDay;
+
+  // 收集当天需要显示的事项
+  let displaySections=[];
+  SECTIONS.forEach(sec=>{
+    let secItems=[];
+    sec.items.forEach(item=>{
+      if(item.days.includes(selectedDay)){
+        secItems.push(item);
+      }
+    });
+    if(secItems.length>0){
+      displaySections.push({...sec,items:secItems});
+    }
+  });
+
+  // 统计
+  let total=0,done=0;
+  displaySections.forEach(sec=>sec.items.forEach(item=>{
+    total++;
+    const key=`${selectedWeek}_d${selectedDay}_${item.id}`;
+    if(state[key]) done++;
+  }));
+  document.getElementById('doneCount').textContent=done;
+  document.getElementById('todoCount').textContent=total-done;
+  document.getElementById('ratePct').textContent=total>0?Math.round(done/total*100)+'%':'--';
+
+  const cont=document.getElementById('content');
+  if(displaySections.length===0){
+    cont.innerHTML='<div class="empty-state">当天无检查事项</div>';
+    return;
+  }
+
+  cont.innerHTML=displaySections.map(sec=>{
+    const secDone=sec.items.filter(item=>state[`${selectedWeek}_d${selectedDay}_${item.id}`]).length;
+    return `<div class="section">
+      <div class="section-header">
+        <div class="section-title">${sec.title}</div>
+        <div class="section-count">${secDone}/${sec.items.length}</div>
+      </div>
+      ${sec.items.map(item=>{
+        const key=`${selectedWeek}_d${selectedDay}_${item.id}`;
+        const checked=!!state[key];
+        return `<div class="item${isLocked?' locked':''}" onclick="${isLocked?'':'toggleItem(\''+key+'\')'}">
+          <div class="chk-wrap"><div class="chk${checked?' checked':''}"></div></div>
+          <div class="item-body">
+            <div class="item-text">${item.text.replace(/\n/g,'<br>')}</div>
+            <div class="item-owner">${item.owner}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function toggleItem(key){
+  await toggleCheck(key);
+  render();
+}
+
+async function init(){
+  await loadFromCloud();
+  render();
+}
+init();
+</script>
+</body>
+</html>
