@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>运营核查看板</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;font-size:13px;background:#f5f5f5;color:#222;padding:0}
+.app{max-width:640px;margin:0 auto;background:#f5f5f5;min-height:100vh}
+.header{background:#07c160;color:#fff;padding:12px 16px 10px;position:sticky;top:0;z-index:10}
+.header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.header h1{font-size:15px;font-weight:500}
+.date-bar{font-size:12px;opacity:.88}
+.tab-bar{display:flex;background:#fff;border-bottom:0.5px solid #e5e5e5;position:sticky;top:56px;z-index:9}
+.tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.tab.active{color:#07c160;border-bottom-color:#07c160;font-weight:500}
+.section{background:#fff;border-radius:8px;margin:10px;overflow:hidden;border:0.5px solid #e8e8e8}
+.section-header{padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid #f0f0f0}
+.section-title{font-size:13px;font-weight:500;color:#111;display:flex;align-items:center;gap:6px}
+.badge{font-size:11px;padding:1px 7px;border-radius:10px;font-weight:400}
+.badge-daily{background:#e8f7ef;color:#07a64a}
+.badge-weekly{background:#e8f0fb;color:#1764e8}
+.badge-priority{background:#fff3e0;color:#e65c00}
+.progress-bar{height:3px;background:#f0f0f0;border-radius:2px;margin:0 14px 0}
+.progress-fill{height:100%;background:#07c160;border-radius:2px;transition:width .3s}
+.items{padding:4px 0}
+.item{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:0.5px solid #f5f5f5;cursor:pointer;transition:background .15s;-webkit-tap-highlight-color:transparent;user-select:none}
+.item:last-child{border-bottom:none}
+.item:active{background:#f9f9f9}
+.item.done .item-text{color:#aaa;text-decoration:line-through}
+.item.done .item-tag{opacity:.5}
+.item.done .item-sub{color:#ccc}
+.checkbox{width:20px;height:20px;border-radius:50%;border:1.5px solid #d0d0d0;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;transition:all .2s}
+.checkbox.checked{background:#07c160;border-color:#07c160}
+.checkbox.checked::after{content:'';width:5px;height:9px;border:1.5px solid #fff;border-top:none;border-left:none;transform:rotate(45deg) translateY(-1px);display:block}
+.item-content{flex:1;min-width:0}
+.item-text{font-size:13px;line-height:1.5;color:#222}
+.item-sub{font-size:11px;color:#999;margin-top:2px;line-height:1.4}
+.item-tag{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.tag-time{background:#fff3cd;color:#9a6c00}
+.tag-resp{background:#e8eafd;color:#3651d4}
+.tag-green{background:#e8f7ef;color:#07a64a}
+.tag-red{background:#feebeb;color:#d62929}
+.tag-orange{background:#fff0e0;color:#c95c00}
+.pane{display:none}
+.pane.active{display:block}
+.day-selector{display:flex;gap:6px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:80px;z-index:8;-webkit-overflow-scrolling:touch}
+.day-selector::-webkit-scrollbar{display:none}
+.day-btn{flex-shrink:0;padding:5px 12px;border-radius:14px;font-size:12px;background:#f5f5f5;color:#555;cursor:pointer;border:0.5px solid transparent;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.day-btn.active{background:#e8f7ef;color:#07a64a;border-color:#b2e5c9}
+.summary-bar{display:flex;gap:8px;padding:8px 10px;background:#fff;margin-bottom:2px}
+.summary-card{flex:1;background:#f7f7f7;border-radius:6px;padding:8px 10px;text-align:center}
+.summary-num{font-size:18px;font-weight:500;color:#07c160}
+.summary-label{font-size:11px;color:#888;margin-top:2px}
+.empty-hint{text-align:center;padding:24px 0;color:#aaa;font-size:12px}
+.reset-btn{font-size:11px;color:#999;padding:2px 8px;border:0.5px solid #ddd;border-radius:10px;background:#fff;cursor:pointer}
+.reset-btn:active{background:#f5f5f5}
+.footer-space{height:24px}
+.section-note{font-size:11px;color:#aaa;padding:6px 14px 4px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-top">
+      <h1>运营核查看板</h1>
+      <span id="headerDate" class="date-bar"></span>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab('daily')">每日核查</div>
+    <div class="tab" onclick="switchTab('weekly')">每周核查</div>
+    <div class="tab" onclick="switchTab('waipei')">外配专项</div>
+  </div>
+
+  <!-- 每日核查 -->
+  <div id="pane-daily" class="pane active">
+    <div class="day-selector" id="dailyDays"></div>
+    <div class="summary-bar" id="dailySummary"></div>
+    <div id="dailyContent"></div>
+    <div class="footer-space"></div>
+  </div>
+
+  <!-- 每周核查 -->
+  <div id="pane-weekly" class="pane">
+    <div class="day-selector" id="weeklyDays"></div>
+    <div class="summary-bar" id="weeklySummary"></div>
+    <div id="weeklyContent"></div>
+    <div class="footer-space"></div>
+  </div>
+
+  <!-- 外配专项 -->
+  <div id="pane-waipei" class="pane">
+    <div class="day-selector" id="waipeiDays"></div>
+    <div class="summary-bar" id="waipeiSummary"></div>
+    <div id="waipeiContent"></div>
+    <div class="footer-space"></div>
+  </div>
+</div>
+
+<script>
+const PEOPLE = {amy:'Amy',jingyi:'静仪'};
+const WEEKDAYS = ['日','一','二','三','四','五','六'];
+
+function todayKey(){
+  const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function weekKey(d){
+  const dt=new Date(d);
+  // ISO周：周一为一周开始
+  const day=dt.getDay()||7;
+  const mon=new Date(dt);
+  mon.setDate(dt.getDate()-day+1);
+  return `${mon.getFullYear()}-W${String(Math.ceil((((mon-new Date(mon.getFullYear(),0,1))/86400000)+1)/7)).padStart(2,'0')}`;
+}
+function formatDate(d){
+  const dt=new Date(d);
+  return `${dt.getMonth()+1}/${dt.getDate()}(${WEEKDAYS[dt.getDay()]})`;
+}
+
+const STATE_KEY='checklist_state_v2';
+let state={};
+function loadState(){
+  try{state=JSON.parse(localStorage.getItem(STATE_KEY)||'{}')}catch(e){state={}}
+}
+function saveState(){
+  localStorage.setItem(STATE_KEY,JSON.stringify(state));
+}
+function getCheck(key){return !!state[key]}
+function toggleCheck(key){
+  state[key]=!state[key];
+  saveState();
+}
+
+// ============ 数据定义 ============
+
+const DAILY_SECTIONS = [
+  {
+    id:'d1', title:'船期舱位录入检查', badge:'daily', priority:true,
+    items:[
+      {id:'d1a',text:'核查船期舱位是否已录入系统',sub:'确认订单船期、舱位信息完整准确',resp:'Jamin'},
+    ]
+  },
+  {
+    id:'d2', title:'舱位播报', badge:'daily', priority:true,
+    items:[
+      {id:'d2a',text:'12:00前 — 确认同事已完成上午播报',sub:'核查舱位播报群是否有当天上午播报记录',resp:'Amy',time:'12:00前'},
+      {id:'d2b',text:'15:00前 — 确认下午第一次播报',sub:'核查15点前播报是否完成',resp:'Amy',time:'15:00前'},
+      {id:'d2c',text:'18:00前 — 确认晚间播报',sub:'核查18点前第三次播报是否完成',resp:'Amy',time:'18:00前'},
+    ]
+  },
+  {
+    id:'d3', title:'查验进度反馈', badge:'daily', priority:true,
+    items:[
+      {id:'d3a',text:'上午 — 客服/余位群通知查验进度',sub:'在群内同步查验最新进度',resp:'Jamin',time:'上午'},
+      {id:'d3b',text:'下午 — 客服/余位群再次通知查验进度',sub:'下午再次同步查验状态',resp:'Jamin',time:'下午'},
+    ]
+  },
+  {
+    id:'d6', title:'超期滞留/查验柜轨迹检查', badge:'daily', priority:true,
+    items:[
+      {id:'d6a',text:'检查超期滞留柜轨迹是否有更新',sub:'重点关注查验柜最新状态，异常及时升级',resp:'Jamin'},
+    ]
+  },
+  {
+    id:'d12', title:'柜子开船检查', badge:'daily',
+    items:[
+      {id:'d12a',text:'开船前 — 确认即将开船柜是否正常',sub:'核查离港状态、港口确认',resp:'Jamin',time:'开船前'},
+      {id:'d12b',text:'开船当天 — 确认正常离港',sub:'确认AIS/系统显示已离港',resp:'Jamin',time:'当天'},
+      {id:'d12c',text:'开船次日 — 再次确认离港无异常',sub:'核查次日状态，有异常立即跟进',resp:'Jamin',time:'次日'},
+    ]
+  },
+];
+
+const WEEKLY_SECTIONS = [
+  {
+    id:'w4', title:'轨迹复核', badge:'weekly', weekday:'二', priority:true,
+    items:[
+      {id:'w4a',text:'复核本周轨迹更新完成情况',sub:'逐票核查轨迹是否正常维护，异常标红',resp:'amy'},
+    ]
+  },
+  {
+    id:'w5', title:'提单文件上传检查', badge:'weekly', weekday:'二',
+    items:[
+      {id:'w5a',text:'核查本周提单文件是否已上传',sub:'检查离港后7天内提单/底单上传状态',resp:'amy'},
+    ]
+  },
+  {
+    id:'w7', title:'ISF申报检查', badge:'weekly', weekday:'二',
+    items:[
+      {id:'w7a',text:'核查本周ISF申报情况',sub:'确认所有需申报订单均已完成ISF',resp:'amy'},
+    ]
+  },
+  {
+    id:'w10', title:'船期渠道匹配检查', badge:'weekly', weekday:'二',
+    items:[
+      {id:'w10a',text:'核查船期与渠道匹配准确性',sub:'确认各渠道订单与对应船期一致',resp:'Jamin'},
+    ]
+  },
+  {
+    id:'w8', title:'放单检查', badge:'weekly', weekday:'四',
+    items:[
+      {id:'w8a',text:'核查本周应放单订单是否已完成放单',sub:'检查放单状态，跟进未放单异常',resp:'Jamin'},
+    ]
+  },
+  {
+    id:'w9', title:'自有抬头补料确认检查', badge:'weekly', weekday:'五/一',
+    items:[
+      {id:'w9a',text:'周五 — 核查自有抬头补料提交情况',sub:'确认需要补料的订单已提交完整资料',resp:'Jamin',time:'周五'},
+      {id:'w9b',text:'周一 — 再次确认补料完成情况',sub:'周一跟进上周遗留补料',resp:'Jamin',time:'周一'},
+    ]
+  },
+];
+
+const WAIPEI_SECTIONS = [
+  {
+    id:'wp1', title:'整理清单 & 登记共享表', badge:'weekly', weekday:'三/五', priority:false,
+    note:'操作配货，登记外配服务商 | 出库前完成 | Amy核查',
+    items:[
+      {id:'wp1a',text:'核查外配订单是否已登记至轨迹跟踪表-操作',sub:'确认出库前操作配货、服务商信息已填写',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp2', title:'审单检查', badge:'weekly', weekday:'三/五',
+    note:'铁路/卡航/海运产品附加费确认、服务商确认、VAT/EORI审核 | 日度自查',
+    items:[
+      {id:'wp2a',text:'TMS海运订单 — 核查附加费/服务商/VAT/EORI是否审核完成',sub:'日度自查，重点检查异常标记',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp4', title:'出库 & 配货导入检查', badge:'weekly', weekday:'三/五',
+    note:'批量配货、批量导入代理信息、销售结算价/预计成本录入 | Amy核查',
+    items:[
+      {id:'wp4a',text:'核查出库批量配货、代理信息导入是否完成',sub:'确认轨迹跟踪表-操作已更新',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp7', title:'追踪号上传检查', badge:'weekly', weekday:'三/五', priority:true,
+    note:'代理出库前生成快递单号，操作上传德速系统 | ETD前一天完成',
+    items:[
+      {id:'wp7a',text:'核查追踪号是否已在ETD前一天上传至系统',sub:'确认轨迹跟踪表-操作中快递单号已填写',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp9', title:'底单/提单上传检查', badge:'weekly', weekday:'三/五', priority:true,
+    note:'离港后7天内上传报关底单/提单；超7天升级',
+    items:[
+      {id:'wp9a',text:'核查操作文件核查表(POD/ISA/报关底单)上传状态',sub:'超7天未上传需升级处理',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp10', title:'轨迹更新核查', badge:'weekly', weekday:'三/五', priority:true,
+    note:'上午/下午各更新一次轨迹 | Amy核查',
+    items:[
+      {id:'wp10a',text:'核查上午轨迹是否已更新',sub:'检查轨迹跟踪表-操作更新时间',resp:'amy',time:'上午'},
+      {id:'wp10b',text:'核查下午轨迹是否已更新',sub:'',resp:'amy',time:'下午'},
+    ]
+  },
+  {
+    id:'wp11', title:'POD上传检查', badge:'weekly', weekday:'三/五', priority:true,
+    note:'签收后3天内上传POD；超7天升级',
+    items:[
+      {id:'wp11a',text:'核查POD上传状态',sub:'签收后3天内必须上传，超7天立即升级',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp12', title:'税金账单上传检查', badge:'weekly', weekday:'三/五',
+    note:'清关放行后3天内上传税金单；超7天升级',
+    items:[
+      {id:'wp12a',text:'核查目的港税金账单上传状态',sub:'清关放行后3天内上传，超7天升级',resp:'amy'},
+    ]
+  },
+  {
+    id:'wp13', title:'异常跟进（查验/时效预警）', badge:'daily', priority:true,
+    note:'日常跟进查验信息同步；时效预警升级',
+    items:[
+      {id:'wp13a',text:'查验柜日度轨迹维护及信息同步',sub:'查验信息当天通知客服，时效异常立即升级',resp:'amy'},
+    ]
+  },
+];
+
+// ============ 渲染逻辑 ============
+
+let currentTab='daily';
+let selectedDay={daily:todayKey(),weekly:weekKey(todayKey()),waipei:weekKey(todayKey())};
+
+function getStateKey(tab,dayKey,itemId){
+  return `${tab}|${dayKey}|${itemId}`;
+}
+
+function renderSection(sec,tab,dayKey){
+  const ids=sec.items.map(i=>i.id);
+  const done=ids.filter(id=>getCheck(getStateKey(tab,dayKey,id))).length;
+  const total=ids.length;
+  const pct=total>0?Math.round(done/total*100):0;
+  let html=`<div class="section" id="sec-${sec.id}">
+    <div class="section-header">
+      <div class="section-title">
+        ${sec.priority?'<span style="color:#e65c00;font-size:12px">★</span>':''}
+        ${sec.title}
+        <span class="badge badge-${sec.badge==='daily'?'daily':'weekly'}">${sec.badge==='daily'?'每日':('每周'+( sec.weekday?sec.weekday:''))}</span>
+      </div>
+      <span style="font-size:11px;color:#aaa">${done}/${total}</span>
+    </div>
+    <div class="progress-bar" style="margin-bottom:0"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+  if(sec.note){html+=`<div class="section-note">${sec.note}</div>`}
+  html+=`<div class="items">`;
+  sec.items.forEach(item=>{
+    const key=getStateKey(tab,dayKey,item.id);
+    const checked=getCheck(key);
+    html+=`<div class="item${checked?' done':''}" onclick="toggle('${tab}','${dayKey}','${item.id}','${sec.id}')">
+      <div class="checkbox${checked?' checked':''}"></div>
+      <div class="item-content">
+        <div class="item-text">
+          ${item.time?`<span class="item-tag tag-time">${item.time}</span>`:''}
+          ${item.text}
+        </div>
+        ${item.sub||item.resp?`<div class="item-sub">
+          ${item.resp?`<span class="item-tag tag-resp">${PEOPLE[item.resp]||item.resp}</span>`:''}
+          ${item.sub||''}
+        </div>`:''}
+      </div>
+    </div>`;
+  });
+  html+=`</div></div>`;
+  return html;
+}
+
+function toggle(tab,dayKey,itemId,secId){
+  const key=getStateKey(tab,dayKey,itemId);
+  toggleCheck(key);
+  renderTab(tab,true);
+  renderSummary(tab,dayKey);
+}
+
+function getDayRange(tab){
+  const today=new Date();
+  const days=[];
+  if(tab==='daily'){
+    // 显示本月所有日期 + 前后各2天
+    const curMonth=new Date(today.getFullYear(), today.getMonth(), 1);
+    const nextMonth=new Date(today.getFullYear(), today.getMonth()+1, 1);
+    const start=new Date(curMonth); start.setDate(start.getDate()-2);
+    const end=new Date(nextMonth); end.setDate(end.getDate()+2);
+    const d=new Date(start);
+    while(d<=end){
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const isToday=k===todayKey();
+      days.push({key:k,label:isToday?`今天 ${d.getMonth()+1}/${d.getDate()}`:formatDate(k)});
+      d.setDate(d.getDate()+1);
+    }
+  }else{
+    // 显示本月所有周 + 前后各1周
+    const curMonth=new Date(today.getFullYear(), today.getMonth(), 1);
+    const nextMonth=new Date(today.getFullYear(), today.getMonth()+1, 1);
+    // 找本月第一周的周一
+    const firstWeekMon=new Date(curMonth);
+    const fd=firstWeekMon.getDay();
+    firstWeekMon.setDate(firstWeekMon.getDate()-(fd===0?6:fd-1));
+    // 找下月最后一周的周日
+    const lastWeekSun=new Date(nextMonth);
+    lastWeekSun.setDate(lastWeekSun.getDate()+6);
+    const d=new Date(firstWeekMon);
+    let wk=0;
+    while(d<lastWeekSun){
+      const k=weekKey(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+      const endD=new Date(d);endD.setDate(d.getDate()+6);
+      const isCurrentWeek=k===weekKey(todayKey());
+      const label=isCurrentWeek?`本周 ${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`:`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`;
+      days.push({key:k,label});
+      d.setDate(d.getDate()+7);
+      wk++;
+    }
+  }
+  return days;
+}
+
+function renderDaySelector(tab){
+  const days=getDayRange(tab);
+  const containerId=tab==='daily'?'dailyDays':tab==='weekly'?'weeklyDays':'waipeiDays';
+  const container=document.getElementById(containerId);
+  container.innerHTML=days.map(d=>`<div class="day-btn${d.key===selectedDay[tab]?' active':''}" onclick="selectDay('${tab}','${d.key}')">${d.label}</div>`).join('');
+  // 自动滚动到选中项
+  requestAnimationFrame(()=>{
+    const active=container.querySelector('.day-btn.active');
+    if(active) active.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+  });
+}
+
+function selectDay(tab,key){
+  selectedDay[tab]=key;
+  renderTab(tab,true);
+}
+
+function getSections(tab){
+  if(tab==='daily')return DAILY_SECTIONS;
+  if(tab==='weekly')return WEEKLY_SECTIONS;
+  return WAIPEI_SECTIONS;
+}
+
+function renderSummary(tab,dayKey){
+  const sections=getSections(tab);
+  const allItems=sections.flatMap(s=>s.items);
+  const total=allItems.length;
+  const done=allItems.filter(i=>getCheck(getStateKey(tab,dayKey,i.id))).length;
+  const pending=total-done;
+  const summaryId=tab==='daily'?'dailySummary':tab==='weekly'?'weeklySummary':'waipeiSummary';
+  document.getElementById(summaryId).innerHTML=`
+    <div class="summary-card"><div class="summary-num" style="color:#07c160">${done}</div><div class="summary-label">已完成</div></div>
+    <div class="summary-card"><div class="summary-num" style="color:#e65c00">${pending}</div><div class="summary-label">待核查</div></div>
+    <div class="summary-card"><div class="summary-num" style="color:#1764e8">${total>0?Math.round(done/total*100):0}%</div><div class="summary-label">完成率</div></div>
+  `;
+}
+
+function renderTab(tab,preserveScroll){
+  const sections=getSections(tab);
+  const dayKey=selectedDay[tab];
+  const contentId=tab==='daily'?'dailyContent':tab==='weekly'?'weeklyContent':'waipeiContent';
+  const scrollY=preserveScroll?window.scrollY:0;
+  renderDaySelector(tab);
+  document.getElementById(contentId).innerHTML=sections.map(s=>renderSection(s,tab,dayKey)).join('');
+  renderSummary(tab,dayKey);
+  if(!preserveScroll)window.scrollTo(0,0);
+  else window.scrollTo(0,scrollY);
+}
+
+function switchTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach((el,i)=>{
+    el.classList.toggle('active',['daily','weekly','waipei'][i]===tab);
+  });
+  document.querySelectorAll('.pane').forEach((el,i)=>{
+    el.classList.toggle('active',['daily','weekly','waipei'][i]===tab);
+  });
+  renderTab(tab,false);
+}
+
+function updateHeaderDate(){
+  const d=new Date();
+  const wds=['周日','周一','周二','周三','周四','周五','周六'];
+  document.getElementById('headerDate').textContent=`${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
+}
+
+loadState();
+updateHeaderDate();
+renderTab('daily',false);
+setInterval(updateHeaderDate,60000);
+</script>
+</body>
+</html>
