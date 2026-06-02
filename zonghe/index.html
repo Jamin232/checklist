@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>综合操作组检查清单</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px;-webkit-tap-highlight-color:transparent}
+.header{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;padding:20px 16px 14px}
+.header h1{font-size:18px;font-weight:600}
+.header .sub{font-size:13px;opacity:.85;margin-top:4px}
+.list{margin:12px 10px}
+.group{margin-bottom:12px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.group-title{font-size:13px;font-weight:600;color:#666;padding:10px 14px;background:#fafbfc;border-bottom:0.5px solid #f0f0f0}
+.item{display:flex;align-items:center;padding:12px 14px;border-bottom:0.5px solid #f5f5f5;text-decoration:none;color:#222;transition:background .15s}
+.item:last-child{border-bottom:none}
+.item:active{background:#f5f8ff}
+.item-icon{flex-shrink:0;width:36px;height:36px;border-radius:10px;background:#e8f0fe;color:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:16px;margin-right:12px}
+.item-body{flex:1;min-width:0}
+.item-title{font-size:14px;font-weight:500}
+.item-desc{font-size:12px;color:#888;margin-top:2px}
+.item-arrow{flex-shrink:0;color:#bbb;font-size:14px}
+.footer{text-align:center;padding:20px;font-size:12px;color:#aaa}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>综合操作组检查清单</h1>
+  <div class="sub">每日/每周工作事项核对</div>
+</div>
+
+<div class="list">
+  <div class="group">
+    <div class="group-title">主管 & 经理</div>
+    <a class="item" href="zh_manager.html">
+      <div class="item-icon">📋</div>
+      <div class="item-body">
+        <div class="item-title">主管&经理清单</div>
+        <div class="item-desc">Nicole & Jamie</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group">
+    <div class="group-title">港前出库 + 审单</div>
+    <a class="item" href="zh_chuku_a.html">
+      <div class="item-icon">📦</div>
+      <div class="item-body">
+        <div class="item-title">港前出库+审单 A岗</div>
+        <div class="item-desc">审单 / 验货 / BKG / 航班安排</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+    <a class="item" href="zh_chuku_b.html">
+      <div class="item-icon">📦</div>
+      <div class="item-body">
+        <div class="item-title">港前出库+审单 B岗</div>
+        <div class="item-desc">审单 / 验货 / BKG / 航班安排</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group">
+    <div class="group-title">港前单证 + 港前跟单</div>
+    <a class="item" href="zh_danzheng_a.html">
+      <div class="item-icon">📄</div>
+      <div class="item-body">
+        <div class="item-title">港前单证+港前跟单 A岗</div>
+        <div class="item-desc">轨迹 / 补料 / 报关 / 打单</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+    <a class="item" href="zh_danzheng_b.html">
+      <div class="item-icon">📄</div>
+      <div class="item-body">
+        <div class="item-title">港前单证+港前跟单 B岗</div>
+        <div class="item-desc">轨迹 / 补料 / 报关 / 打单</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group">
+    <div class="group-title">港后 + 关务</div>
+    <a class="item" href="zh_ganghou_a.html">
+      <div class="item-icon">🛃</div>
+      <div class="item-body">
+        <div class="item-title">港后+关务 A岗</div>
+        <div class="item-desc">轨迹排查 / 清关 / 税金 / 账单</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+    <a class="item" href="zh_ganghou_b.html">
+      <div class="item-icon">🛃</div>
+      <div class="item-body">
+        <div class="item-title">港后+关务 B岗</div>
+        <div class="item-desc">轨迹排查 / 清关 / 税金 / 账单</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group">
+    <div class="group-title">外配</div>
+    <a class="item" href="zh_waipai.html">
+      <div class="item-icon">🚚</div>
+      <div class="item-body">
+        <div class="item-title">外配清单</div>
+        <div class="item-desc">轨迹 / 审单 / 下单 / 价格更新</div>
+      </div>
+      <div class="item-arrow">›</div>
+    </a>
+  </div>
+</div>
+
+<div class="footer">数据实时同步 · 点击刷新按钮获取最新状态</div>
+</body>
+</html>
