@@ -6,23 +6,23 @@
 <title>客服组 checklist - 二组</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:20px}}
-.header{{background:linear-gradient(135deg,#e8832a,#d4690a);color:#fff;padding:16px 16px 12px;position:sticky;top:0;z-index:10}}
-.header h1{{font-size:17px;font-weight:600;margin-bottom:2px}}
-.header .sub{{font-size:12px;opacity:.85}}
-.week-selector{{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:64px;z-index:8;-webkit-overflow-scrolling:touch}}
-.week-selector::-webkit-scrollbar{{display:none}}
-.wk-btn{{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}}
-.wk-btn.active{{background:#e8832a;color:#fff;font-weight:600}}
-.person-list{{padding:8px 10px}}
-.person-card{{display:flex;align-items:center;justify-content:space-between;background:#fff;margin-bottom:6px;padding:12px 14px;border-radius:10px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:all .15s;text-decoration:none;color:inherit}}
-.person-card:active{{background:#f5f8ff;transform:scale(.98)}}
-.person-name{{font-size:14px;font-weight:600;color:#222}}
-.person-stats{{font-size:11px;color:#888;display:flex;gap:8px}}
-.person-stat{{display:flex;align-items:center;gap:2px}}
-.stat-done{{color:#0a8043;font-weight:700}}
-.stat-todo{{color:#e37400;font-weight:700}}
-.stat-rate{{color:#e8832a;font-weight:700}}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:20px}
+.header{background:linear-gradient(135deg,#e8832a,#d4690a);color:#fff;padding:16px 16px 12px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:64px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.wk-btn.active{background:#e8832a;color:#fff;font-weight:600}
+.person-list{padding:8px 10px}
+.person-card{display:flex;align-items:center;justify-content:space-between;background:#fff;margin-bottom:6px;padding:12px 14px;border-radius:10px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:all .15s;text-decoration:none;color:inherit}
+.person-card:active{background:#f5f8ff;transform:scale(.98)}
+.person-name{font-size:14px;font-weight:600;color:#222}
+.person-stats{font-size:11px;color:#888;display:flex;gap:8px}
+.person-stat{display:flex;align-items:center;gap:2px}
+.stat-done{color:#0a8043;font-weight:700}
+.stat-todo{color:#e37400;font-weight:700}
+.stat-rate{color:#e8832a;font-weight:700}
 </style>
 </head>
 <body>
@@ -38,27 +38,27 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 
 let selectedWeek=null;
 
-function getTodayWeekKey(){{
+function getTodayWeekKey(){
   const d=new Date();const dow=d.getDay()||7;
   const mon=new Date(d);mon.setDate(d.getDate()-dow+1);
-  return `W${{mon.getFullYear()}}-${{String(mon.getMonth()+1).padStart(2,'0')}}-${{String(mon.getDate()).padStart(2,'0')}}`;
-}}
-function buildWeekList(){{
+  return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+}
+function buildWeekList(){
   const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
   let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
-  while(d<=end){{
+  while(d<=end(){
     const endD=new Date(d);endD.setDate(d.getDate()+6);
-    const wk=`W${{d.getFullYear()}}-${{String(d.getMonth()+1).padStart(2,'0')}}-${{String(d.getDate()).padStart(2,'0')}}`;
-    weeks.push({{key:wk,label:`${{d.getMonth()+1}}/${{d.getDate()}}-${{endD.getMonth()+1}}/${{endD.getDate()}}`}});
+    const wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    weeks.push({key:wk,label:`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`});
     d.setDate(d.getDate()+7);
-  }}
+  }
   return weeks;
-}}
+}
 
-async function fetchPersonStats(person){{
-  const url=`${{SUPABASE_URL}}/rest/v1/${{person.table}}?select=check_key,checked`;
-  try{{const r=await fetch(url,{{headers:{{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${{SUPABASE_KEY}}`}}}});
-  if(!r.ok)return{{done:0,todo:0,rate:'--'}};
+async function fetchPersonStats(person){
+  const url=`${SUPABASE_URL}/rest/v1/${person.table}?select=check_key,checked`;
+  try{const r=await fetch(url,{headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`}});
+  if(!r.ok)return{done:0,todo:0,rate:'--'};
   const rows=await r.json();
   const todayWk=getTodayWeekKey();
   // 统计本周（selectedWeek）D1-D5 的完成情况
@@ -67,37 +67,37 @@ async function fetchPersonStats(person){{
   // 简化：统计所有已勾选数 / 总事项数（按本周）
   const allKeys=rows.map(r=>r.check_key);
   // 只统计本周 D1-D5
-  const prefix=`${{wk}}_d`;
+  const prefix=`${wk}_d`;
   const weekRows=rows.filter(r=>r.check_key.startsWith(prefix)&&r.check_key.charAt(prefix.length)>= '1'&&r.check_key.charAt(prefix.length)<='5');
   total=weekRows.length;
   done=weekRows.filter(r=>r.checked).length;
-  return{{done,todo:total-done,rate:total>0?Math.round(done/total*100)+'%':'--'}};
-}}catch(e){{return{{done:0,todo:0,rate:'--'}};}}
-}}
+  return{done,todo:total-done,rate:total>0?Math.round(done/total*100)+'%':'--'};
+}catch(e){return{done:0,todo:0,rate:'--'};}
+}
 
-async function render(){{
+async function render(){
   const weeks=buildWeekList(),todayWk=getTodayWeekKey();
   if(!selectedWeek) selectedWeek=todayWk;
-  document.getElementById('weekSelector').innerHTML=weeks.map(w=>`<button class="wk-btn${{w.key===selectedWeek?' active':''}}" onclick="selectWeek('${{w.key}}')">${{w.label}}</button>`).join('');
+  document.getElementById('weekSelector').innerHTML=weeks.map(w=>`<button class="wk-btn${w.key===selectedWeek?' active':''}" onclick="selectWeek('${w.key}')">${w.label}</button>`).join('');
 
   const list=document.getElementById('personList');
   list.innerHTML=PEOPLE.map(p=>`
-    <a class="person-card" href="${{p.file}}">
-      <div class="person-name">${{p.name}}</div>
-      <div class="person-stats" id="stats-${{p.table}}">
+    <a class="person-card" href="${p.file}">
+      <div class="person-name">${p.name}</div>
+      <div class="person-stats" id="stats-${p.table}">
         <span class="person-stat">完成率 --</span>
       </div>
     </a>`).join('');
 
   // 异步加载每人完成率
-  for(const p of PEOPLE){{
-    fetchPersonStats(p).then(stats=>{{
-      const el=document.getElementById(`stats-${{p.table}}`);
-      if(el)el.innerHTML=`<span class="person-stat stat-done">已完成 ${{stats.done}}</span><span class="person-stat stat-rate">完成率 ${{stats.rate}}</span>`;
-    }});
-  }}
-}}
-function selectWeek(wk){{selectedWeek=wk;render();}}
+  for(const p of PEOPLE){
+    fetchPersonStats(p).then(stats=>{
+      const el=document.getElementById(`stats-${p.table}`);
+      if(el)el.innerHTML=`<span class="person-stat stat-done">已完成 ${stats.done}</span><span class="person-stat stat-rate">完成率 ${stats.rate}</span>`;
+    });
+  }
+}
+function selectWeek(wk){selectedWeek=wk;render();}
 
 render();
 </script>
