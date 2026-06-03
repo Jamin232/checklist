@@ -9,31 +9,33 @@
 <title>客服总体核查 Checklist</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px}
-.header{background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;padding:20px 16px;text-align:center}
-.header h1{font-size:20px;font-weight:700;margin-bottom:4px}
-.header .sub{font-size:13px;opacity:.85}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px;-webkit-tap-highlight-color:transparent}
+.header{background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;padding:16px 16px 10px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
 
-/* 日期导航 */
-.date-nav{display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 16px;background:#fff;margin:10px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.date-nav button{width:36px;height:36px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555}
-.date-nav button:active{background:#f0f0f0}
-.date-label{font-size:16px;font-weight:600;color:#333;min-width:160px;text-align:center}
-.today-btn{font-size:12px;color:#5b21b6;border:1px solid #5b21b6;border-radius:14px;padding:4px 12px;background:#fff;cursor:pointer}
-.today-btn:active{background:#ede9fe}
+.summary{display:flex;gap:10px;padding:12px 16px;background:#fff;position:sticky;top:64px;z-index:9;border-bottom:0.5px solid #eee}
+.summary .card{flex:1;text-align:center;padding:10px 6px;border-radius:10px;background:#f8f9fb}
+.summary .card .num{font-size:22px;font-weight:700}
+.summary .card .lbl{font-size:11px;color:#888;margin-top:2px}
+.summary .card.done .num{color:#059669}
+.summary .card.todo .num{color:#dc2626}
+.summary .card.rate .num{color:#5b21b6}
 
-.stats-bar{display:flex;gap:8px;margin:0 10px 10px}
-.stat-card{flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.stat-card .num{font-size:24px;font-weight:700}
-.stat-card .label{font-size:11px;color:#888;margin-top:2px}
-.stat-card.done .num{color:#059669}
-.stat-card.todo .num{color:#dc2626}
-.stat-card.rate .num{color:#5b21b6}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:128px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.wk-btn.active{background:#5b21b6;color:#fff;font-weight:600}
 
-.content{margin:0 10px}
+.day-tabs{display:flex;background:#fff;position:sticky;top:170px;z-index:7;border-bottom:0.5px solid #eee}
+.day-tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.day-tab.active{color:#5b21b6;border-bottom-color:#5b21b6;font-weight:600}
+.day-tab.today{color:#5b21b6}
+.day-tab.past{color:#bbb}
 
 /* 事项卡片 */
-.item-card{background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.item-card{background:#fff;border-radius:10px;padding:12px 16px;margin:8px 10px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:opacity .2s}
+.item-card.locked{opacity:.45;pointer-events:none}
 .item-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .item-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .item-name{font-size:14px;font-weight:600;flex:1}
@@ -53,65 +55,93 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 .legend{font-size:11px;color:#aaa;text-align:center;padding:12px}
 .footer{text-align:center;padding:16px;color:#aaa;font-size:12px}
 .empty-hint{text-align:center;padding:30px;color:#aaa;font-size:13px}
+
+.btn-refresh{position:fixed;bottom:20px;right:16px;width:44px;height:44px;border-radius:50%;background:#5b21b6;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(91,33,182,.3);z-index:100;display:flex;align-items:center;justify-content:center}
+.btn-refresh:active{transform:scale(.9)}
 </style>
 </head>
 <body>
-<div class="header"><h1>📊 客服总体核查</h1><div class="sub">多人协同 · 云端同步</div></div>
+<div class="header"><h1>客服总体核查</h1><div class="sub">多人协同 · 云端同步</div></div>
 
-<div class="date-nav">
-  <button onclick="prevDay()">‹</button>
-  <span class="date-label" id="dateLabel">--</span>
-  <button onclick="nextDay()">›</button>
-  <button class="today-btn" onclick="goToday()">今天</button>
+<div class="summary">
+  <div class="card done"><div class="num" id="doneNum">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoNum">0</div><div class="lbl">待检查</div></div>
+  <div class="card rate"><div class="num" id="rateNum">--</div><div class="lbl">完成率</div></div>
 </div>
 
-<div class="stats-bar">
-  <div class="stat-card done"><div class="num" id="doneNum">0</div><div class="label">已完成</div></div>
-  <div class="stat-card todo"><div class="num" id="todoNum">0</div><div class="label">待检查</div></div>
-  <div class="stat-card rate"><div class="num" id="rateNum">--</div><div class="label">完成率</div></div>
-</div>
+<div class="week-selector" id="weekSelector"></div>
+<div class="day-tabs" id="dayTabs"></div>
+<div id="content"></div>
 
-<div class="content" id="content"></div>
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步云端数据">⟳</button>
 
 <div class="legend">每项权重均等 · 多人负责项按人数均摊 · 勾选即保存</div>
 <div class="footer">数据实时同步至 Supabase</div>
 
 <script>
+const TABLE_NAME='ganghou_zonghe_checklist';
 const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
 
-// 事项定义：每个事项在一个具体天的负责人
-// day: 1=周一...5=周五, isMonthly, persons: 当天负责人列表
+const DAY_NAMES=['周一','周二','周三','周四','周五'];
+
+// 事项定义：day: 1=周一...5=周五, persons: 当天负责人
 const ITEMS = [
-  {id:1, name:'【仓库操作记录】检查', day:1, persons:['Miya']},
-  {id:2, name:'【解冻订单】检查', day:1, persons:['Jeslyn']},
-  {id:3, name:'【销售结算账单完成情况】检查', day:1, persons:['Maggie']},
-  {id:4, name:'【减结算价】分析', day:1, persons:['Wendy']},
-  {id:5, name:'【拼车分析】分析', day:1, persons:['Maggie']},
-  {id:6, name:'【补录审批】审批', day:1, persons:['Wendy','Miya']},
-  {id:7, name:'【机器人审核、检查】检查', day:1, persons:['Miya']},
-  {id:8, name:'【异常件】质检', day:2, persons:['Maggie','Miya','Wendy','Abby']},
-  {id:6, name:'【补录审批】审批', day:2, persons:['Wendy','Miya']},
-  {id:7, name:'【机器人审核、检查】检查', day:2, persons:['Maggie']},
-  {id:9, name:'【在仓货物提醒-播报群】检查Cathy是否发出', day:2, persons:['Miya']},
-  {id:10, name:'【货拉拉充值】统筹+申请', day:2, persons:['Jeslyn']},
-  {id:3, name:'【销售结算账单完成情况】检查', day:3, persons:['Abby']},
-  {id:6, name:'【补录审批】审批', day:3, persons:['Wendy','Miya']},
-  {id:11, name:'【机器人通知】配置', day:3, persons:['Maggie']},
-  {id:7, name:'【机器人审核、检查】检查', day:3, persons:['Abby']},
-  {id:9, name:'【在仓货物提醒-播报群】检查Cathy是否发出', day:4, persons:['Abby']},
-  {id:6, name:'【补录审批】审批', day:4, persons:['Wendy','Miya']},
-  {id:7, name:'【机器人审核、检查】检查', day:4, persons:['Jeslyn']},
-  {id:3, name:'【销售结算账单完成情况】检查', day:5, persons:['Miya']},
-  {id:7, name:'【机器人审核、检查】检查', day:5, persons:['Maggie']},
-  {id:10, name:'【货拉拉充值】统筹+申请', day:5, persons:['Jeslyn']},
-  {id:6, name:'【补录审批】审批', day:5, persons:['Wendy','Miya']},
-  {id:12, name:'【待确认/待交寄/退货订单】费用改零', isMonthly:true, monthlyDay:15, persons:['Jeslyn']},
-  {id:13, name:'车队账单放共享表并监督核对', isMonthly:true, monthlyDay:15, persons:['Maggie','Wendy']}
+  {id:'i1', name:'【仓库操作记录】检查', day:1, persons:['Miya']},
+  {id:'i2', name:'【解冻订单】检查', day:1, persons:['Jeslyn']},
+  {id:'i3', name:'【销售结算账单完成情况】检查', day:1, persons:['Maggie']},
+  {id:'i4', name:'【减结算价】分析', day:1, persons:['Wendy']},
+  {id:'i5', name:'【拼车分析】分析', day:1, persons:['Maggie']},
+  {id:'i6', name:'【补录审批】审批', day:1, persons:['Wendy','Miya']},
+  {id:'i7', name:'【机器人审核、检查】检查', day:1, persons:['Miya']},
+  {id:'i8', name:'【异常件】质检', day:2, persons:['Maggie','Miya','Wendy','Abby']},
+  {id:'i6', name:'【补录审批】审批', day:2, persons:['Wendy','Miya']},
+  {id:'i7', name:'【机器人审核、检查】检查', day:2, persons:['Maggie']},
+  {id:'i9', name:'【在仓货物提醒-播报群】检查Cathy是否发出', day:2, persons:['Miya']},
+  {id:'i10', name:'【货拉拉充值】统筹+申请', day:2, persons:['Jeslyn']},
+  {id:'i3', name:'【销售结算账单完成情况】检查', day:3, persons:['Abby']},
+  {id:'i6', name:'【补录审批】审批', day:3, persons:['Wendy','Miya']},
+  {id:'i11', name:'【机器人通知】配置', day:3, persons:['Maggie']},
+  {id:'i7', name:'【机器人审核、检查】检查', day:3, persons:['Abby']},
+  {id:'i9', name:'【在仓货物提醒-播报群】检查Cathy是否发出', day:4, persons:['Abby']},
+  {id:'i6', name:'【补录审批】审批', day:4, persons:['Wendy','Miya']},
+  {id:'i7', name:'【机器人审核、检查】检查', day:4, persons:['Jeslyn']},
+  {id:'i3', name:'【销售结算账单完成情况】检查', day:5, persons:['Miya']},
+  {id:'i7', name:'【机器人审核、检查】检查', day:5, persons:['Maggie']},
+  {id:'i10', name:'【货拉拉充值】统筹+申请', day:5, persons:['Jeslyn']},
+  {id:'i6', name:'【补录审批】审批', day:5, persons:['Wendy','Miya']},
+  {id:'i12', name:'【待确认/待交寄/退货订单】费用改零', isMonthly:true, monthlyDay:15, persons:['Jeslyn']},
+  {id:'i13', name:'车队账单放共享表并监督核对', isMonthly:true, monthlyDay:15, persons:['Maggie','Wendy']}
 ];
 
-let selectedDate=null;
-const DAY_NAMES=['','周一','周二','周三','周四','周五','周六','周日'];
+let state={};
+let selectedWeek=null;
+let selectedDay=1;
+
+// ===== 周相关 =====
+function getTodayWeekKey(){
+  let d=new Date();
+  let dow=d.getDay()||7;
+  let mon=new Date(d); mon.setDate(d.getDate()-dow+1);
+  return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+}
+function getTodayDayIndex(){ let d=new Date(); let dow=d.getDay(); return dow===0?7:dow; }
+
+function buildWeekList(){
+  let weeks=[];
+  let start=new Date(2026,5,1); // 6月1日
+  let end=new Date(2026,11,31);
+  let d=new Date(start);
+  let fd=d.getDay(); d.setDate(d.getDate()-(fd===0?6:fd-1));
+  while(d<=end){
+    let endD=new Date(d); endD.setDate(d.getDate()+6);
+    let wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    let label=`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`;
+    weeks.push({key:wk,label});
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
 
 function getWorkdayForMonthDay(year,month,day){
   let d=new Date(year,month-1,day);
@@ -121,105 +151,122 @@ function getWorkdayForMonthDay(year,month,day){
   return d;
 }
 
-function getDateKey(d){
-  let dt=new Date(d);
-  dt.setHours(0,0,0,0);
-  let y=dt.getFullYear();
-  let m=String(dt.getMonth()+1).padStart(2,'0');
-  let dd=String(dt.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
+function getWeekMonday(wk){
+  let parts=wk.substring(1).split('-');
+  return new Date(+parts[0],+parts[1]-1,+parts[2]);
 }
 
-function getDateLabel(dk){
-  let dt=new Date(dk+'T00:00:00');
-  let m=dt.getMonth()+1;
-  let dd=dt.getDate();
-  let dow=dt.getDay();
-  let dowName=DAY_NAMES[dow===0?7:dow];
-  return `${m}月${dd}日 ${dowName}`;
+// ===== Supabase =====
+async function apiFetch(method,path,body){
+  let r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,headers:{
+      'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,
+      'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'
+    },body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null;}
+  let txt=await r.text();
+  return txt?JSON.parse(txt):null;
 }
 
-function prevDay(){
-  let d=new Date(selectedDate+'T00:00:00');
-  d.setDate(d.getDate()-1);
-  selectedDate=getDateKey(d);
-  render();
-}
-
-function nextDay(){
-  let d=new Date(selectedDate+'T00:00:00');
-  d.setDate(d.getDate()+1);
-  selectedDate=getDateKey(d);
-  render();
-}
-
-function goToday(){
-  selectedDate=getDateKey(new Date());
-  render();
-}
-
-async function apiFetch(method, path, body){
-  let headers={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY};
-  if(body){headers['Content-Type']='application/json';headers['Prefer']='return=minimal';}
-  let r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined});
-  if(!r.ok){let t=await r.text();throw new Error(t);}
-  if(r.status===204||r.headers.get('content-length')==='0')return null;
-  return r.json();
-}
-
-async function toggleCheck(checkKey, checked){
+async function loadFromCloud(){
   try{
-    await apiFetch('PATCH','ganghou_zonghe_checklist?check_key=eq.'+encodeURIComponent(checkKey),{checked,updated_at:new Date().toISOString()});
-  }catch(e){
-    await apiFetch('POST','ganghou_zonghe_checklist',{check_key:checkKey,checked,updated_at:new Date().toISOString()});
-  }
+    let rows=await apiFetch('GET',`/${TABLE_NAME}?select=check_key,checked`);
+    if(!rows)return;
+    state={}; rows.forEach(r=>{state[r.check_key]=r.checked;});
+  }catch(e){console.error('Load error',e);}
 }
 
-async function render(){
-  let dateKey=selectedDate;
-  document.getElementById('dateLabel').textContent=getDateLabel(dateKey);
-  let today=new Date(dateKey+'T00:00:00');
-  let dow=today.getDay();
-  let dayNum=dow===0?7:dow; // 1=周一...7=周日
+async function toggleCheck(key){
+  let newVal=!state[key];
+  state[key]=newVal;
+  let patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{checked:newVal,updated_at:new Date().toISOString()});
+  if(patchR!==null&&patchR.length>0)return;
+  let postR=await apiFetch('POST',`/${TABLE_NAME}`,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});
+  if(postR===null){state[key]=!newVal;}
+}
+
+async function refreshFromCloud(){
+  await loadFromCloud();
+  render();
+}
+
+// ===== 渲染 =====
+function renderWeekSelector(){
+  let weeks=buildWeekList();
+  let todayWk=getTodayWeekKey();
+  if(!selectedWeek)selectedWeek=todayWk;
+  let cont=document.getElementById('weekSelector');
+  cont.innerHTML=weeks.map(w=>`<button class="wk-btn${w.key===selectedWeek?' active':''}" onclick="selectWeek('${w.key}')">${w.label}</button>`).join('');
+  requestAnimationFrame(()=>{
+    let act=cont.querySelector('.wk-btn.active');
+    if(act)act.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+  });
+}
+
+function renderDayTabs(){
+  let todayIdx=getTodayDayIndex();
+  let todayWk=getTodayWeekKey();
+  if(!selectedDay)selectedDay=todayIdx>=1&&todayIdx<=5?todayIdx:1;
+  let cont=document.getElementById('dayTabs');
+  cont.innerHTML=DAY_NAMES.map((n,i)=>{
+    let idx=i+1;
+    let isToday=(selectedWeek===todayWk&&idx===todayIdx);
+    let isPast=(selectedWeek<todayWk)||(selectedWeek===todayWk&&idx<todayIdx);
+    let cls='day-tab';
+    if(idx===selectedDay)cls+=' active';
+    if(isToday)cls+=' today';
+    if(isPast)cls+=' past';
+    return `<div class="${cls}" onclick="selectDay(${idx})">${n}</div>`;
+  }).join('');
+}
+
+function selectWeek(wk){selectedWeek=wk;render();}
+function selectDay(d){selectedDay=d;render();}
+
+function render(){
+  renderWeekSelector();
+  renderDayTabs();
+
+  let todayIdx=getTodayDayIndex();
+  let todayWk=getTodayWeekKey();
+  let isPastWeek=selectedWeek<todayWk;
+  let isPastDay=selectedWeek===todayWk&&selectedDay<todayIdx;
+  let isLocked=isPastWeek||isPastDay;
 
   // 收集当天事项
   let todayItems=[];
+  let monday=getWeekMonday(selectedWeek);
+  let dayDate=new Date(monday); dayDate.setDate(dayDate.getDate()+selectedDay-1);
 
   for(let item of ITEMS){
     if(item.isMonthly){
-      // 月度事项：判断是否落在今天
-      let md=getWorkdayForMonthDay(today.getFullYear(), today.getMonth()+1, item.monthlyDay);
-      if(getDateKey(md)===dateKey){
-        todayItems.push({...item});
+      let md=getWorkdayForMonthDay(dayDate.getFullYear(),dayDate.getMonth()+1,item.monthlyDay);
+      // 检查这个月度的workday是否落在当前周的当前天
+      let mdDow=md.getDay(); mdDow=mdDow===0?7:mdDow;
+      if(mdDow===selectedDay){
+        let mdWk=`W${md.getFullYear()}-${String(md.getMonth()+1).padStart(2,'0')}-${String(md.getDate()-mdDow+1).padStart(2,'0')}`;
+        if(mdWk===selectedWeek){
+          todayItems.push({...item});
+        }
       }
     }else{
-      // 日常事项：匹配星期几
-      if(item.day===dayNum){
+      if(item.day===selectedDay){
         todayItems.push({...item});
       }
     }
   }
 
-  // 收集所有check_key
+  // 收集 check_key
   let allKeys=[];
   let allItems=[];
 
   for(let it of todayItems){
     for(let p of it.persons){
-      let key=`${dateKey}_i${it.id}_${p}`;
+      let key=`${selectedWeek}_d${selectedDay}_${it.id}_${p}`;
       allKeys.push(key);
-      allItems.push({item:it, person:p, key});
+      allItems.push({item:it,person:p,key});
     }
-  }
-
-  // 批量查询
-  let checkedMap={};
-  if(allKeys.length>0){
-    try{
-      let orFilter=allKeys.map(a=>'check_key.eq.'+encodeURIComponent(a)).join(',');
-      let rows=await apiFetch('GET','ganghou_zonghe_checklist?select=check_key,checked&or=('+orFilter+')');
-      if(rows){for(let r of rows)checkedMap[r.check_key]=r.checked;}
-    }catch(e){console.error(e);}
   }
 
   // 统计
@@ -229,12 +276,10 @@ async function render(){
   let itemRates={};
   for(let iid of uniqueItemIds){
     let checks=allItems.filter(a=>a.item.id===iid);
-    let done=checks.filter(a=>checkedMap[a.key]).length;
+    let done=checks.filter(a=>state[a.key]).length;
     itemRates[iid]=checks.length>0?done/checks.length:0;
   }
-  let overallRate=totalItems>0
-    ? Object.values(itemRates).reduce((a,b)=>a+b,0)/totalItems
-    : 0;
+  let overallRate=totalItems>0?Object.values(itemRates).reduce((a,b)=>a+b,0)/totalItems:0;
   let doneItems=Object.values(itemRates).reduce((a,b)=>a+b,0);
 
   document.getElementById('doneNum').textContent=doneItems.toFixed(1);
@@ -242,48 +287,50 @@ async function render(){
   document.getElementById('rateNum').textContent=Math.round(overallRate*100)+'%';
 
   // 渲染
-  let html='';
-
+  let cont=document.getElementById('content');
   if(todayItems.length===0){
-    html='<div class="empty-hint">今日无检查事项</div>';
-  }else{
-    for(let it of todayItems){
-      let itemChecks=allItems.filter(a=>a.item.id===it.id);
-      let itemDone=itemChecks.filter(a=>checkedMap[a.key]).length;
-      let itemTotal=itemChecks.length;
-      let allDone=itemDone===itemTotal;
-      let anyDone=itemDone>0;
-
-      html+=`<div class="item-card">
-        <div class="item-header">
-          <div class="item-dot" style="background:${allDone?'#059669':anyDone?'#f59e0b':'#d1d5db'}"></div>
-          <div class="item-name">${it.name}</div>
-          <div class="item-stats">${itemDone}/${itemTotal}</div>
-        </div>
-        <div class="check-rows">`;
-
-      for(let c of itemChecks){
-        let ck=checkedMap[c.key]||false;
-        html+=`<div class="check-row${ck?' checked':''}" onclick="handleCheck('${c.key}',${!ck})">
-          <input type="checkbox" ${ck?'checked':''} onclick="event.stopPropagation();handleCheck('${c.key}',this.checked)">
-          <span class="check-person">${c.person}</span>
-          <span class="check-status">✓</span>
-        </div>`;
-      }
-      html+=`</div></div>`;
-    }
+    cont.innerHTML='<div class="empty-hint">当天无检查事项</div>';
+    return;
   }
 
-  document.getElementById('content').innerHTML=html;
+  cont.innerHTML=todayItems.map(it=>{
+    let itemChecks=allItems.filter(a=>a.item.id===it.id);
+    let itemDone=itemChecks.filter(a=>state[a.key]).length;
+    let itemTotal=itemChecks.length;
+    let allDone=itemDone===itemTotal;
+    let anyDone=itemDone>0;
+
+    return `<div class="item-card${isLocked?' locked':''}">
+      <div class="item-header">
+        <div class="item-dot" style="background:${allDone?'#059669':anyDone?'#f59e0b':'#d1d5db'}"></div>
+        <div class="item-name">${it.name}</div>
+        <div class="item-stats">${itemDone}/${itemTotal}</div>
+      </div>
+      <div class="check-rows">
+        ${itemChecks.map(c=>{
+          let ck=!!state[c.key];
+          return `<div class="check-row${ck?' checked':''}" onclick="${isLocked?'':'handleCheck(\''+c.key+'\')'}">
+            <input type="checkbox" ${ck?'checked':''} onclick="${isLocked?'event.preventDefault()':'event.stopPropagation();handleCheck(\''+c.key+'\')'}">
+            <span class="check-person">${c.person}</span>
+            <span class="check-status">✓</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-async function handleCheck(key, checked){
-  await toggleCheck(key, checked);
+async function handleCheck(key){
+  if(!key)return;
+  await toggleCheck(key);
   render();
 }
 
-selectedDate=getDateKey(new Date());
-render();
+async function init(){
+  await loadFromCloud();
+  render();
+}
+init();
 </script>
 </body>
 </html>
