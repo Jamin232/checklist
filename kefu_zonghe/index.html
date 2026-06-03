@@ -13,11 +13,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 .header{background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;padding:20px 16px;text-align:center}
 .header h1{font-size:20px;font-weight:700;margin-bottom:4px}
 .header .sub{font-size:13px;opacity:.85}
-.week-nav{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 16px;background:#fff;margin:10px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.week-nav button{width:32px;height:32px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555}
-.week-nav button:active{background:#f0f0f0}
-.week-label{font-size:15px;font-weight:600;color:#333;min-width:140px;text-align:center}
-.today-btn{font-size:12px;color:#5b21b6;border:1px solid #5b21b6;border-radius:14px;padding:4px 10px;background:#fff;cursor:pointer}
+
+/* 日期导航 */
+.date-nav{display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 16px;background:#fff;margin:10px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.date-nav button{width:36px;height:36px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555}
+.date-nav button:active{background:#f0f0f0}
+.date-label{font-size:16px;font-weight:600;color:#333;min-width:160px;text-align:center}
+.today-btn{font-size:12px;color:#5b21b6;border:1px solid #5b21b6;border-radius:14px;padding:4px 12px;background:#fff;cursor:pointer}
 .today-btn:active{background:#ede9fe}
 
 .stats-bar{display:flex;gap:8px;margin:0 10px 10px}
@@ -29,12 +31,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 .stat-card.rate .num{color:#5b21b6}
 
 .content{margin:0 10px}
-
-/* 按天分组 */
-.day-section{margin-bottom:6px}
-.day-title{font-size:14px;font-weight:700;color:#5b21b6;padding:10px 4px 6px;display:flex;align-items:center;gap:6px}
-.day-badge{font-size:11px;color:#fff;background:#5b21b6;border-radius:10px;padding:2px 10px}
-.day-progress{font-size:12px;color:#888;margin-left:auto}
 
 /* 事项卡片 */
 .item-card{background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
@@ -62,10 +58,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 <body>
 <div class="header"><h1>📊 客服总体核查</h1><div class="sub">多人协同 · 云端同步</div></div>
 
-<div class="week-nav">
-  <button onclick="prevWeek()">‹</button>
-  <span class="week-label" id="weekLabel">--</span>
-  <button onclick="nextWeek()">›</button>
+<div class="date-nav">
+  <button onclick="prevDay()">‹</button>
+  <span class="date-label" id="dateLabel">--</span>
+  <button onclick="nextDay()">›</button>
   <button class="today-btn" onclick="goToday()">今天</button>
 </div>
 
@@ -114,7 +110,7 @@ const ITEMS = [
   {id:13, name:'车队账单放共享表并监督核对', isMonthly:true, monthlyDay:15, persons:['Maggie','Wendy']}
 ];
 
-let selectedWeekStart=null;
+let selectedDate=null;
 const DAY_NAMES=['','周一','周二','周三','周四','周五','周六','周日'];
 
 function getWorkdayForMonthDay(year,month,day){
@@ -125,49 +121,40 @@ function getWorkdayForMonthDay(year,month,day){
   return d;
 }
 
-function getMonday(d){
+function getDateKey(d){
   let dt=new Date(d);
-  let day=dt.getDay();
-  let diff=day===0?-6:1-day;
-  dt.setDate(dt.getDate()+diff);
   dt.setHours(0,0,0,0);
-  return dt;
+  let y=dt.getFullYear();
+  let m=String(dt.getMonth()+1).padStart(2,'0');
+  let dd=String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
 }
 
-function getWeekKey(d){
-  let m=getMonday(d);
-  let y=m.getFullYear();
-  let mm=String(m.getMonth()+1).padStart(2,'0');
-  let dd=String(m.getDate()).padStart(2,'0');
-  return `${y}-${mm}-${dd}`;
+function getDateLabel(dk){
+  let dt=new Date(dk+'T00:00:00');
+  let m=dt.getMonth()+1;
+  let dd=dt.getDate();
+  let dow=dt.getDay();
+  let dowName=DAY_NAMES[dow===0?7:dow];
+  return `${m}月${dd}日 ${dowName}`;
 }
 
-function getWeekLabel(wk){
-  let m=new Date(wk+'T00:00:00');
-  let f=new Date(m); f.setDate(f.getDate()+6);
-  let fm=String(m.getMonth()+1).padStart(2,'0');
-  let fd=String(m.getDate()).padStart(2,'0');
-  let tm=String(f.getMonth()+1).padStart(2,'0');
-  let td=String(f.getDate()).padStart(2,'0');
-  return `${fm}.${fd} - ${tm}.${td}`;
-}
-
-function prevWeek(){
-  let m=new Date(selectedWeekStart+'T00:00:00');
-  m.setDate(m.getDate()-7);
-  selectedWeekStart=getWeekKey(m);
+function prevDay(){
+  let d=new Date(selectedDate+'T00:00:00');
+  d.setDate(d.getDate()-1);
+  selectedDate=getDateKey(d);
   render();
 }
 
-function nextWeek(){
-  let m=new Date(selectedWeekStart+'T00:00:00');
-  m.setDate(m.getDate()+7);
-  selectedWeekStart=getWeekKey(m);
+function nextDay(){
+  let d=new Date(selectedDate+'T00:00:00');
+  d.setDate(d.getDate()+1);
+  selectedDate=getDateKey(d);
   render();
 }
 
 function goToday(){
-  selectedWeekStart=getWeekKey(new Date());
+  selectedDate=getDateKey(new Date());
   render();
 }
 
@@ -189,53 +176,39 @@ async function toggleCheck(checkKey, checked){
 }
 
 async function render(){
-  let weekStart=selectedWeekStart;
-  document.getElementById('weekLabel').textContent=getWeekLabel(weekStart);
-  let monday=new Date(weekStart+'T00:00:00');
-  let sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
+  let dateKey=selectedDate;
+  document.getElementById('dateLabel').textContent=getDateLabel(dateKey);
+  let today=new Date(dateKey+'T00:00:00');
+  let dow=today.getDay();
+  let dayNum=dow===0?7:dow; // 1=周一...7=周日
 
-  // 按天分组整理事项
-  // daySections: {1:[{item,persons,day}], 2:[...], ...}
-  // 同时处理月度事项
-  let daySections={1:[],2:[],3:[],4:[],5:[], monthly:[]};
+  // 收集当天事项
+  let todayItems=[];
 
   for(let item of ITEMS){
     if(item.isMonthly){
-      let td=getWorkdayForMonthDay(monday.getFullYear(), monday.getMonth()+1, item.monthlyDay);
-      if(td>=monday && td<=sunday){
-        let dow=td.getDay(); // 0=周日
-        let dayNum=dow===0?7:dow; // 转为1-7
-        if(dayNum>=1 && dayNum<=5){
-          daySections[dayNum].push({...item, _monthlyDate:td, _day:dayNum});
-        }
+      // 月度事项：判断是否落在今天
+      let md=getWorkdayForMonthDay(today.getFullYear(), today.getMonth()+1, item.monthlyDay);
+      if(getDateKey(md)===dateKey){
+        todayItems.push({...item});
       }
     }else{
-      // 日常事项
-      if(item.day>=1 && item.day<=5){
-        daySections[item.day].push({...item, _day:item.day});
+      // 日常事项：匹配星期几
+      if(item.day===dayNum){
+        todayItems.push({...item});
       }
     }
   }
 
   // 收集所有check_key
   let allKeys=[];
-  let allItems=[]; // 扁平化所有勾选项
+  let allItems=[];
 
-  for(let d=1; d<=5; d++){
-    for(let it of daySections[d]){
-      let dateStr;
-      if(it.isMonthly){
-        let td=it._monthlyDate;
-        dateStr=`${String(td.getFullYear())}-${String(td.getMonth()+1).padStart(2,'0')}-${String(td.getDate()).padStart(2,'0')}`;
-      }else{
-        let td=new Date(monday); td.setDate(td.getDate()+d-1);
-        dateStr=`${String(td.getFullYear())}-${String(td.getMonth()+1).padStart(2,'0')}-${String(td.getDate()).padStart(2,'0')}`;
-      }
-      for(let p of it.persons){
-        let key=`${weekStart}_d${d}_i${it.id}_${p}`;
-        allKeys.push(key);
-        allItems.push({item:it, person:p, day:d, key, dateStr});
-      }
+  for(let it of todayItems){
+    for(let p of it.persons){
+      let key=`${dateKey}_i${it.id}_${p}`;
+      allKeys.push(key);
+      allItems.push({item:it, person:p, key});
     }
   }
 
@@ -249,12 +222,10 @@ async function render(){
     }catch(e){console.error(e);}
   }
 
-  // 计算统计 - 按事项id去重作为分母
-  // 收集所有唯一事项id
+  // 统计
   let uniqueItemIds=[...new Set(allItems.map(a=>a.item.id))];
   let totalItems=uniqueItemIds.length;
 
-  // 每项完成率
   let itemRates={};
   for(let iid of uniqueItemIds){
     let checks=allItems.filter(a=>a.item.id===iid);
@@ -270,34 +241,14 @@ async function render(){
   document.getElementById('todoNum').textContent=(totalItems-doneItems).toFixed(1);
   document.getElementById('rateNum').textContent=Math.round(overallRate*100)+'%';
 
-  // 渲染按天分组
+  // 渲染
   let html='';
-  let hasAny=false;
 
-  for(let d=1; d<=5; d++){
-    let dayItems=daySections[d];
-    if(dayItems.length===0) continue;
-    hasAny=true;
-
-    // 计算当天进度
-    let dayChecks=allItems.filter(a=>a.day===d);
-    let dayDone=dayChecks.filter(a=>checkedMap[a.key]).length;
-    let dayTotal=dayChecks.length;
-
-    // 该天的日期
-    let dayDate=new Date(monday); dayDate.setDate(dayDate.getDate()+d-1);
-    let dateLabel=`${dayDate.getMonth()+1}月${dayDate.getDate()}日`;
-
-    html+=`<div class="day-section">
-      <div class="day-title">
-        <span class="day-badge">${DAY_NAMES[d]}</span>
-        <span style="font-size:12px;color:#888">${dateLabel}</span>
-        <span class="day-progress">${dayDone}/${dayTotal} 勾选</span>
-      </div>`;
-
-    for(let it of dayItems){
-      // 该事项当天所有勾选框
-      let itemChecks=allItems.filter(a=>a.item.id===it.id && a.day===d);
+  if(todayItems.length===0){
+    html='<div class="empty-hint">今日无检查事项</div>';
+  }else{
+    for(let it of todayItems){
+      let itemChecks=allItems.filter(a=>a.item.id===it.id);
       let itemDone=itemChecks.filter(a=>checkedMap[a.key]).length;
       let itemTotal=itemChecks.length;
       let allDone=itemDone===itemTotal;
@@ -321,11 +272,6 @@ async function render(){
       }
       html+=`</div></div>`;
     }
-    html+=`</div>`;
-  }
-
-  if(!hasAny){
-    html='<div class="empty-hint">本周无检查事项</div>';
   }
 
   document.getElementById('content').innerHTML=html;
@@ -336,7 +282,7 @@ async function handleCheck(key, checked){
   render();
 }
 
-selectedWeekStart=getWeekKey(new Date());
+selectedDate=getDateKey(new Date());
 render();
 </script>
 </body>
