@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>客服总体核查 Checklist</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px}
+.header{background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;padding:20px 16px;text-align:center}
+.header h1{font-size:20px;font-weight:700;margin-bottom:4px}
+.header .sub{font-size:13px;opacity:.85}
+.week-nav{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 16px;background:#fff;margin:10px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.week-nav button{width:32px;height:32px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555}
+.week-nav button:active{background:#f0f0f0}
+.week-label{font-size:15px;font-weight:600;color:#333;min-width:140px;text-align:center}
+.today-btn{font-size:12px;color:#5b21b6;border:1px solid #5b21b6;border-radius:14px;padding:4px 10px;background:#fff;cursor:pointer}
+.today-btn:active{background:#ede9fe}
+
+.stats-bar{display:flex;gap:8px;margin:0 10px 10px}
+.stat-card{flex:1;background:#fff;border-radius:10px;padding:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stat-card .num{font-size:24px;font-weight:700}
+.stat-card .label{font-size:11px;color:#888;margin-top:2px}
+.stat-card.done .num{color:#059669}
+.stat-card.todo .num{color:#dc2626}
+.stat-card.rate .num{color:#5b21b6}
+
+.item-list{margin:0 10px}
+.item-card{background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.item-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.item-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.item-name{font-size:14px;font-weight:600;flex:1}
+.item-day{font-size:11px;color:#888;background:#f5f6fa;padding:2px 8px;border-radius:10px}
+.check-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f6fa;cursor:pointer}
+.check-row:last-child{border-bottom:none}
+.check-row input[type=checkbox]{width:20px;height:20px;accent-color:#5b21b6;cursor:pointer;flex-shrink:0}
+.check-person{font-size:13px;color:#555;flex:1}
+.check-status{font-size:11px;color:#059669;display:none}
+.check-row.checked .check-status{display:inline}
+.check-row.checked .check-person{color:#059669}
+
+.legend{font-size:11px;color:#aaa;text-align:center;padding:12px}
+.footer{text-align:center;padding:16px;color:#aaa;font-size:12px}
+</style>
+</head>
+<body>
+<div class="header"><h1>📊 客服总体核查</h1><div class="sub">多人协同 · 云端同步</div></div>
+
+<div class="week-nav">
+  <button onclick="prevWeek()">‹</button>
+  <span class="week-label" id="weekLabel">--</span>
+  <button onclick="nextWeek()">›</button>
+  <button class="today-btn" onclick="goToday()">今天</button>
+</div>
+
+<div class="stats-bar">
+  <div class="stat-card done"><div class="num" id="doneNum">0</div><div class="label">已完成</div></div>
+  <div class="stat-card todo"><div class="num" id="todoNum">0</div><div class="label">待检查</div></div>
+  <div class="stat-card rate"><div class="num" id="rateNum">--</div><div class="label">完成率</div></div>
+</div>
+
+<div class="item-list" id="itemList"></div>
+
+<div class="legend">每项权重均等 · 多人负责项按人数均摊 · 勾选即保存</div>
+<div class="footer">数据实时同步至 Supabase</div>
+
+<script>
+const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+// 事项定义：id, name, days(星期几), persons(负责人列表), isMonthly(是否月度), monthlyDay(月度日期号)
+const ITEMS = [
+  {id:1, name:'【仓库操作记录】检查', days:[1], persons:['Miya'], isMonthly:false},
+  {id:2, name:'【解冻订单】检查', days:[1], persons:['Jeslyn'], isMonthly:false},
+  {id:3, name:'【销售结算账单完成情况】检查', days:[1,3,5], persons:['Maggie','Abby','Miya'], isMonthly:false},
+  {id:4, name:'【减结算价】分析', days:[1], persons:['Wendy'], isMonthly:false},
+  {id:5, name:'【拼车分析】分析', days:[1], persons:['Maggie'], isMonthly:false},
+  {id:6, name:'【补录审批】审批', days:[1,2,3,4,5], persons:['Wendy','Miya'], isMonthly:false},
+  {id:7, name:'【机器人审核、检查】检查', days:[1,2,3,4,5], persons:['Miya','Maggie','Abby','Jeslyn'], isMonthly:false},
+  {id:8, name:'【异常件】质检', days:[2], persons:['Maggie','Miya','Wendy','Abby'], isMonthly:false},
+  {id:9, name:'【在仓货物提醒-播报群】检查Cathy是否发出', days:[2,4], persons:['Miya','Abby'], isMonthly:false},
+  {id:10, name:'【货拉拉充值】统筹+申请', days:[2,5], persons:['Jeslyn'], isMonthly:false},
+  {id:11, name:'【机器人通知】配置', days:[3], persons:['Maggie'], isMonthly:false},
+  {id:12, name:'【待确认/待交寄/退货订单】费用改零', days:[], persons:['Jeslyn'], isMonthly:true, monthlyDay:15},
+  {id:13, name:'车队账单放共享表并监督核对', days:[], persons:['Maggie','Wendy'], isMonthly:true, monthlyDay:15}
+];
+
+let selectedWeekStart=null;
+
+// 获取某月第N天（如15号）若为周末则提前到周五的日期
+function getWorkdayForMonthDay(year,month,day){
+  let d=new Date(year,month-1,day);
+  let dow=d.getDay(); // 0=周日
+  if(dow===0) d.setDate(d.getDate()-2);
+  else if(dow===6) d.setDate(d.getDate()-1);
+  return d;
+}
+
+// 获取某周的周一日期
+function getMonday(d){
+  let dt=new Date(d);
+  let day=dt.getDay();
+  let diff=day===0?-6:1-day;
+  dt.setDate(dt.getDate()+diff);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+
+function getWeekKey(d){
+  let m=getMonday(d);
+  let y=m.getFullYear();
+  let mm=String(m.getMonth()+1).padStart(2,'0');
+  let dd=String(m.getDate()).padStart(2,'0');
+  return `${y}-${mm}-${dd}`;
+}
+
+function getWeekLabel(wk){
+  let m=new Date(wk+'T00:00:00');
+  let f=new Date(m); f.setDate(f.getDate()+6);
+  let fm=String(m.getMonth()+1).padStart(2,'0');
+  let fd=String(m.getDate()).padStart(2,'0');
+  let tm=String(f.getMonth()+1).padStart(2,'0');
+  let td=String(f.getDate()).padStart(2,'0');
+  return `${fm}.${fd} - ${tm}.${td}`;
+}
+
+// 判断某事项在某周是否应该显示
+function shouldShowItem(item, weekStart){
+  let monday=new Date(weekStart+'T00:00:00');
+  let sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
+
+  if(item.isMonthly){
+    // 月度事项：检查该月的15号（偏移后）是否落在本周内
+    let targetDate=getWorkdayForMonthDay(monday.getFullYear(), monday.getMonth()+1, item.monthlyDay);
+    return targetDate>=monday && targetDate<=sunday;
+  }
+  // 日常事项：检查是否有匹配的星期几
+  for(let day of item.days){
+    let d=new Date(monday); d.setDate(d.getDate()+day-1);
+    if(d>=monday && d<=sunday) return true;
+  }
+  return false;
+}
+
+// 获取事项在某周对应的人员列表（日常事项：该周出现该事项的天数对应的负责人去重）
+function getItemPersons(item, weekStart){
+  if(item.isMonthly){
+    return item.persons;
+  }
+  // 日常事项返回所有负责人（每个负责人每天都要做）
+  let monday=new Date(weekStart+'T00:00:00');
+  let sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
+  let matchingDays=[];
+  for(let day of item.days){
+    let d=new Date(monday); d.setDate(d.getDate()+day-1);
+    if(d>=monday && d<=sunday) matchingDays.push(day);
+  }
+  // 返回所有人 × 匹配天数
+  let result=[];
+  for(let md of matchingDays){
+    for(let p of item.persons){
+      result.push({person:p, day:md});
+    }
+  }
+  return result;
+}
+
+function formatDayLabel(day){
+  const names=['','周一','周二','周三','周四','周五','周六','周日'];
+  return names[day]||'';
+}
+
+function prevWeek(){
+  let m=new Date(selectedWeekStart+'T00:00:00');
+  m.setDate(m.getDate()-7);
+  selectedWeekStart=getWeekKey(m);
+  render();
+}
+
+function nextWeek(){
+  let m=new Date(selectedWeekStart+'T00:00:00');
+  m.setDate(m.getDate()+7);
+  selectedWeekStart=getWeekKey(m);
+  render();
+}
+
+function goToday(){
+  selectedWeekStart=getWeekKey(new Date());
+  render();
+}
+
+async function apiFetch(method, path, body){
+  let headers={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY};
+  if(body){headers['Content-Type']='application/json';headers['Prefer']='return=minimal';}
+  let r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined});
+  if(!r.ok){let t=await r.text();throw new Error(t);}
+  if(r.status===204||r.headers.get('content-length')==='0')return null;
+  return r.json();
+}
+
+async function toggleCheck(checkKey, checked){
+  try{
+    await apiFetch('PATCH','ganghou_zonghe_checklist?check_key=eq.'+encodeURIComponent(checkKey),{checked,updated_at:new Date().toISOString()});
+  }catch(e){
+    await apiFetch('POST','ganghou_zonghe_checklist',{check_key:checkKey,checked,updated_at:new Date().toISOString()});
+  }
+}
+
+async function render(){
+  let weekStart=selectedWeekStart;
+  document.getElementById('weekLabel').textContent=getWeekLabel(weekStart);
+
+  // 筛选该周应显示的事项
+  let visibleItems=[];
+  for(let item of ITEMS){
+    if(shouldShowItem(item, weekStart)){
+      visibleItems.push(item);
+    }
+  }
+
+  // 获取所有check_key并查询Supabase
+  let allKeys=[];
+  for(let item of visibleItems){
+    let entries=getItemPersons(item, weekStart);
+    for(let e of entries){
+      let key;
+      if(item.isMonthly){
+        let monday=new Date(weekStart+'T00:00:00');
+        let targetDate=getWorkdayForMonthDay(monday.getFullYear(), monday.getMonth()+1, item.monthlyDay);
+        let ym=String(targetDate.getMonth()+1).padStart(2,'0');
+        let yd=String(targetDate.getDate()).padStart(2,'0');
+        key=`${weekStart}_i${item.id}_${e.person}_m${ym}${yd}`;
+      }else{
+        key=`${weekStart}_i${item.id}_${e.person}_d${e.day}`;
+      }
+      allKeys.push({item,entry:e,key});
+    }
+  }
+
+  // 批量查询
+  let checkedMap={};
+  if(allKeys.length>0){
+    try{
+      let orFilter=allKeys.map(a=>'check_key.eq.'+encodeURIComponent(a.key)).join(',');
+      let rows=await apiFetch('GET','ganghou_zonghe_checklist?select=check_key,checked&or=('+orFilter+')');
+      if(rows){for(let r of rows)checkedMap[r.check_key]=r.checked;}
+    }catch(e){console.error(e);}
+  }
+
+  // 计算统计
+  let totalItems=visibleItems.length; // 事项数
+  let totalChecks=allKeys.length; // 总勾选框数
+  let doneChecks=allKeys.filter(a=>checkedMap[a.key]).length;
+
+  // 完成率 = sum(每项完成比例) / 事项数
+  let itemRates={};
+  for(let item of visibleItems){
+    let itemChecks=allKeys.filter(a=>a.item.id===item.id);
+    let itemDone=itemChecks.filter(a=>checkedMap[a.key]).length;
+    itemRates[item.id]=itemChecks.length>0?itemDone/itemChecks.length:0;
+  }
+  let overallRate=visibleItems.length>0
+    ? Object.values(itemRates).reduce((a,b)=>a+b,0)/visibleItems.length
+    : 0;
+
+  // 事项完成度（小数1位）
+  let doneItems=Object.values(itemRates).reduce((a,b)=>a+b,0);
+
+  document.getElementById('doneNum').textContent=doneItems.toFixed(1);
+  document.getElementById('todoNum').textContent=(totalItems-doneItems).toFixed(1);
+  document.getElementById('rateNum').textContent=Math.round(overallRate*100)+'%';
+
+  // 渲染列表
+  let listHtml='';
+  for(let item of visibleItems){
+    let entries=allKeys.filter(a=>a.item.id===item.id);
+    let done=entries.filter(a=>checkedMap[a.key]).length;
+    let total=entries.length;
+
+    // 事项在哪些天
+    let dayLabels=[];
+    if(item.isMonthly){
+      let monday=new Date(weekStart+'T00:00:00');
+      let td=getWorkdayForMonthDay(monday.getFullYear(), monday.getMonth()+1, item.monthlyDay);
+      dayLabels.push(`${td.getMonth()+1}月${td.getDate()}日`);
+    }else{
+      for(let day of item.days){
+        dayLabels.push(formatDayLabel(day));
+      }
+    }
+
+    // 去重人员列表（用于显示）
+    let uniquePersons=[...new Set(entries.map(e=>e.entry.person))];
+
+    listHtml+=`<div class="item-card">
+      <div class="item-header">
+        <div class="item-dot" style="background:${done===total?'#059669':done>0?'#f59e0b':'#d1d5db'}"></div>
+        <div class="item-name">${item.name}</div>
+        <div class="item-day">${dayLabels.join(' · ')}</div>
+        <span style="font-size:11px;color:#888">${done}/${total}</span>
+      </div>`;
+
+    for(let e of entries){
+      let ck=checkedMap[e.key]||false;
+      listHtml+=`<div class="check-row${ck?' checked':''}" onclick="handleCheck('${e.key}',${!ck})">
+        <input type="checkbox" ${ck?'checked':''} onclick="event.stopPropagation();handleCheck('${e.key}',this.checked)">
+        <span class="check-person">${e.entry.person}${item.isMonthly?'':(' · '+formatDayLabel(e.entry.day))}</span>
+        <span class="check-status">✓ 已完成</span>
+      </div>`;
+    }
+    listHtml+=`</div>`;
+  }
+
+  if(visibleItems.length===0){
+    listHtml='<div style="text-align:center;padding:40px;color:#aaa">本周无检查事项</div>';
+  }
+
+  document.getElementById('itemList').innerHTML=listHtml;
+}
+
+async function handleCheck(key, checked){
+  await toggleCheck(key, checked);
+  render();
+}
+
+// 初始化
+selectedWeekStart=getWeekKey(new Date());
+render();
+</script>
+</body>
+</html>
