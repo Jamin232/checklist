@@ -89,6 +89,36 @@ function getTodayWeekKey(){
   return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
 }
 function getTodayDayIndex(){const d=new Date();const dow=d.getDay();return dow===0?7:dow;}
+
+// 获取某月某号的实际工作日：如果落在周末则提前到周五
+function getWorkdayForMonthDay(year,month,day){
+  const d=new Date(year,month-1,day);
+  const dow=d.getDay(); // 0=周日 6=周六
+  if(dow===6) d.setDate(d.getDate()-1); // 周六→周五
+  else if(dow===0) d.setDate(d.getDate()-2); // 周日→周五
+  return d;
+}
+// 判断月度任务是否应在当前选中周+天显示
+function shouldShowMonthly(itemId,selectedWeekKey,selectedDay){
+  // 解析选中周的周一日期
+  const parts=selectedWeekKey.replace('W','').split('-');
+  const wkMon=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+  const wkSun=new Date(wkMon);wkSun.setDate(wkMon.getDate()+6);
+  const year=wkMon.getFullYear(),month=wkMon.getMonth()+1;
+  // 根据itemId确定目标日期
+  let targetDay;
+  if(itemId==='mon5') targetDay=5;
+  else if(itemId==='mon15') targetDay=15;
+  else if(itemId==='mon20') targetDay=20;
+  else return false;
+  const workday=getWorkdayForMonthDay(year,month,targetDay);
+  // 检查工作日是否落在本周内
+  if(workday<wkMon||workday>wkSun) return false;
+  // 检查是否匹配当前选中的天（周一=1...周五=5，周六=6，周日=7）
+  const workDow=workday.getDay(); // 0=周日
+  const workDayIdx=workDow===0?7:workDow;
+  return workDayIdx===selectedDay;
+}
 function buildWeekList(){
   const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
   let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
@@ -144,7 +174,12 @@ function render(){
   renderWeekSelector();renderDayTabs();
   const todayIdx=getTodayDayIndex(),todayWk=getTodayWeekKey();
   const isLocked=(selectedWeek<todayWk)||(selectedWeek===todayWk&&selectedDay<todayIdx);
-  let displayItems=ITEMS.filter(item=>item.days.includes(selectedDay));
+  let displayItems=ITEMS.filter(item=>{
+  if(item.days.includes(selectedDay)) return true;
+  // 月度任务：检查是否在偏移后的工作日显示
+  if(item.days.includes(6)&&shouldShowMonthly(item.id,selectedWeek,selectedDay)) return true;
+  return false;
+});
   let total=displayItems.length,done=displayItems.filter(item=>state[`${selectedWeek}_d${selectedDay}_${item.id}`]).length;
   document.getElementById('doneCount').textContent=done;
   document.getElementById('todoCount').textContent=total-done;
