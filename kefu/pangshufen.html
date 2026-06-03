@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>客服组 checklist - 庞淑芬</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:40px;-webkit-tap-highlight-color:transparent}}
+.header{{background:linear-gradient(135deg,#e8832a,#d4690a);color:#fff;padding:16px 16px 10px;position:sticky;top:0;z-index:10}}
+.header h1{{font-size:17px;font-weight:600;margin-bottom:2px}}
+.header .sub{{font-size:12px;opacity:.85}}
+.summary{{display:flex;gap:10px;padding:12px 16px;background:#fff;position:sticky;top:64px;z-index:9;border-bottom:0.5px solid #eee}}
+.summary .card{{flex:1;text-align:center;padding:10px 6px;border-radius:10px;background:#f8f9fb}}
+.summary .card .num{{font-size:22px;font-weight:700}}
+.summary .card .lbl{{font-size:11px;color:#888;margin-top:2px}}
+.summary .card.done .num{{color:#0a8043}}
+.summary .card.todo .num{{color:#e37400}}
+.summary .card.rate .num{{color:#e8832a}}
+.week-selector{{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:128px;z-index:8;-webkit-overflow-scrolling:touch}}
+.week-selector::-webkit-scrollbar{{display:none}}
+.wk-btn{{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}}
+.wk-btn.active{{background:#e8832a;color:#fff;font-weight:600}}
+.day-tabs{{display:flex;background:#fff;position:sticky;top:170px;z-index:7;border-bottom:0.5px solid #eee}}
+.day-tab{{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}}
+.day-tab.active{{color:#e8832a;border-bottom-color:#e8832a;font-weight:600}}
+.day-tab.today{{color:#e8832a}}
+.day-tab.past{{color:#bbb}}
+.section{{margin:8px 10px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
+.section-header{{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fafbfc;border-bottom:0.5px solid #f0f0f0}}
+.section-title{{font-size:14px;font-weight:600}}
+.section-count{{font-size:11px;color:#888}}
+.item{{display:flex;align-items:center;padding:10px 12px;border-bottom:0.5px solid #f5f5f5;transition:background .15s}}
+.item:last-child{{border-bottom:none}}
+.item:active{{background:#f5f8ff}}
+.item.locked{{opacity:.45;pointer-events:none}}
+.priority-tag{{display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;margin-right:6px;flex-shrink:0}}
+.priority-p1{{background:#fee2e2;color:#b91c1c}}
+.priority-p2{{background:#fff3cd;color:#92400e}}
+.priority-p3{{background:#dbeafe;color:#1e40af}}
+.priority-p0{{background:#f3f4f6;color:#6b7280}}
+.chk-wrap{{flex-shrink:0;width:28px;height:28px;margin-right:10px;position:relative}}
+.chk{{width:24px;height:24px;border-radius:6px;border:2px solid #ccc;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}}
+.chk.checked{{background:#0a8043;border-color:#0a8043}}
+.chk.checked::after{{content:'✓';color:#fff;font-size:14px;font-weight:700}}
+.item-body{{flex:1;min-width:0}}
+.item-text{{font-size:13px;line-height:1.45;color:#333;white-space:pre-line}}
+.empty-state{{text-align:center;padding:40px 20px;color:#aaa;font-size:14px}}
+.btn-back{{position:fixed;bottom:70px;left:16px;width:44px;height:44px;border-radius:50%;background:#e8832a;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(232,131,42,.3);z-index:100;display:flex;align-items:center;justify-content:center;text-decoration:none}}
+.btn-refresh{{position:fixed;bottom:20px;right:16px;width:44px;height:44px;border-radius:50%;background:#e8832a;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(232,131,42,.3);z-index:100;display:flex;align-items:center;justify-content:center}}
+.btn-refresh:active{{transform:scale(.9)}}
+.sync-status{{position:fixed;bottom:24px;left:16px;font-size:11px;color:#888;background:rgba(255,255,255,.9);padding:4px 10px;border-radius:10px;z-index:100}}
+</style>
+</head>
+<body>
+<div class="header"><h1>客服组 checklist</h1><div class="sub" id="subTitle">庞淑芬 · 二组</div></div>
+<div class="summary">
+  <div class="card done"><div class="num" id="doneCount">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoCount">0</div><div class="lbl">待核查</div></div>
+  <div class="card rate"><div class="num" id="ratePct">0%</div><div class="lbl">完成率</div></div>
+</div>
+<div class="week-selector" id="weekSelector"></div>
+<div class="day-tabs" id="dayTabs"></div>
+<div id="content"></div>
+<a class="btn-back" href="kefu_erzu.html" title="返回分组">←</a>
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步云端数据">⟳</button>
+<div class="sync-status" id="syncStatus">● 就绪</div>
+
+<script>
+const TABLE_NAME='kefu_pangshufen';
+const PERSON_NAME='庞淑芬';
+const GROUP_NAME='二组';
+const GROUP_FILE='kefu_erzu.html';
+
+const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA1NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+const DAY_NAMES=['周一','周二','周三','周四','周五','月度'];
+let state={{}},selectedWeek=null,selectedDay=1;
+
+const ITEMS=[{id:'m1',text:'发送入库数据，至少发送当天18点前\n至少每天发三次（早上上班，14点，18点前）',days:[1],priority:'p1'},{id:'m2',text:'检查机器人通知情况\n每天至少检查两次（中午12点，18点前）',days:[1],priority:'p1'},{id:'m3',text:'完成到上周五入库账单\n入库两天内',days:[1],priority:'p2'},{id:'m4',text:'检查跟进异常件\n每天至少检查两次（中午12点，18点前）',days:[1],priority:'p2'},{id:'m5',text:'发送提柜+送仓\n当天下班前',days:[1],priority:'p3'},{id:'m6',text:'解冻数据\n每天处理两次（早上上班，18点前）',days:[1],priority:'p3'},{id:'m7',text:'检查仓库费用设置板块，处理贴标费，仓租\n当天下班前',days:[1],priority:'p0'},{id:'m8',text:'检查"已提货，已自送，已取号"状态订单，未入库的催促仓库入库\n当天下班前',days:[1],priority:'p0'},{id:'t1',text:'发送入库数据，至少发送当天18点前\n至少每天发三次（早上上班，14点，18点前）',days:[2],priority:'p1'},{id:'t2',text:'检查机器人通知情况\n每天至少检查两次（中午12点，18点前）',days:[2],priority:'p1'},{id:'t3',text:'检查跟进异常件\n每天至少检查两次（中午12点，18点前）',days:[2],priority:'p2'},{id:'t4',text:'解冻数据\n每天处理两次（早上上班，18点前）',days:[2],priority:'p3'},{id:'t5',text:'检查仓库费用设置板块，处理贴标费，仓租\n当天下班前',days:[2],priority:'p0'},{id:'t6',text:'检查"已提货，已自送，已取号"状态订单，未入库的催促仓库入库\n当天下班前',days:[2],priority:'p0'},{id:'t7',text:'新客户机器人配置\n当天下班前',days:[2],priority:'p0'},{id:'w1',text:'发送入库数据，至少发送当天18点前\n至少每天发三次（早上上班，14点，18点前）',days:[3],priority:'p1'},{id:'w2',text:'检查机器人通知情况\n每天至少检查两次（中午12点，18点前）',days:[3],priority:'p1'},{id:'w3',text:'完成到周一入库账单\n入库两天内',days:[3],priority:'p2'},{id:'w4',text:'检查跟进异常件\n每天至少检查两次（中午12点，18点前）',days:[3],priority:'p2'},{id:'w5',text:'发送提柜+送仓\n当天下班前',days:[3],priority:'p3'},{id:'w6',text:'解冻数据\n每天处理两次（早上上班，18点前）',days:[3],priority:'p3'},{id:'w7',text:'检查仓库费用设置板块，处理贴标费，仓租\n当天下班前',days:[3],priority:'p0'},{id:'w8',text:'检查"已提货，已自送，已取号"状态订单，未入库的催促仓库入库\n当天下班前',days:[3],priority:'p0'},{id:'w9',text:'新客户机器人配置\n当天下班前',days:[3],priority:'p0'},{id:'th1',text:'发送入库数据，至少发送当天18点前\n至少每天发三次（早上上班，14点，18点前）',days:[4],priority:'p1'},{id:'th2',text:'检查机器人通知情况\n每天至少检查两次（中午12点，18点前）',days:[4],priority:'p1'},{id:'th3',text:'检查报关件事项\n当天下班前',days:[4],priority:'p1'},{id:'th4',text:'检查跟进异常件\n每天至少检查两次（中午12点，18点前）',days:[4],priority:'p2'},{id:'th5',text:'解冻数据\n每天处理两次（早上上班，18点前）',days:[4],priority:'p3'},{id:'th6',text:'检查"已提货，已自送，已取号"状态订单，未入库的催促仓库入库\n当天下班前',days:[4],priority:'p0'},{id:'th7',text:'检查仓库费用设置板块，处理贴标费，仓租\n当天下班前',days:[4],priority:'p0'},{id:'f1',text:'发送入库数据，至少发送当天18点前\n至少每天发三次（早上上班，14点，18点前）',days:[5],priority:'p1'},{id:'f2',text:'检查机器人通知情况\n每天至少检查两次（中午12点，18点前）',days:[5],priority:'p1'},{id:'f3',text:'检查报关件事项\n当天下班前',days:[5],priority:'p1'},{id:'f4',text:'完成到周三入库账单\n入库两天内',days:[5],priority:'p2'},{id:'f5',text:'检查跟进异常件\n每天至少检查两次（中午12点，18点前）',days:[5],priority:'p2'},{id:'f6',text:'发送提柜+送仓\n当天下班前',days:[5],priority:'p3'},{id:'f7',text:'解冻数据\n每天处理两次（早上上班，18点前）',days:[5],priority:'p3'},{id:'f8',text:'检查仓库费用设置板块，处理贴标费，仓租\n当天下班前',days:[5],priority:'p0'},{id:'f9',text:'检查"已提货，已自送，已取号"状态订单，未入库的催促仓库入库\n当天下班前',days:[5],priority:'p0'},{id:'mon5',text:'每月5号：核实"待确认，待交寄"的订单是否还来货\n不来货的检查是否有产生费用，没费用则删单',days:[6],priority:'p0'},{id:'mon15',text:'每月15号：核对完所有车队账单\n核对费用，并备注单号+名字',days:[6],priority:'p0'},{id:'mon20',text:'每月20号：核实"待确认，待交寄"的订单是否还来货\n不来货的检查是否有产生费用，没费用则删单',days:[6],priority:'p0'}];
+
+function getTodayWeekKey(){{
+  const d=new Date();const dow=d.getDay()||7;
+  const mon=new Date(d);mon.setDate(d.getDate()-dow+1);
+  return `W${{mon.getFullYear()}}-${{String(mon.getMonth()+1).padStart(2,'0')}}-${{String(mon.getDate()).padStart(2,'0')}}`;
+}}
+function getTodayDayIndex(){{const d=new Date();const dow=d.getDay();return dow===0?7:dow;}}
+function buildWeekList(){{
+  const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
+  let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
+  while(d<=end){{
+    const endD=new Date(d);endD.setDate(d.getDate()+6);
+    const wk=`W${{d.getFullYear()}}-${{String(d.getMonth()+1).padStart(2,'0')}}-${{String(d.getDate()).padStart(2,'0')}}`;
+    weeks.push({{key:wk,label:`${{d.getMonth()+1}}/${{d.getDate()}}-${{endD.getMonth()+1}}/${{endD.getDate()}}`}});
+    d.setDate(d.getDate()+7);
+  }}
+  return weeks;
+}}
+
+async function apiFetch(method,path,body){{
+  const r=await fetch(`${{SUPABASE_URL}}/rest/v1${{path}}`,{{method,headers:{{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${{SUPABASE_KEY}}`,'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'}},body:body?JSON.stringify(body):undefined}});
+  if(!r.ok){{console.error('API error',r.status,r.statusText);return null}}
+  const txt=await r.text();return txt?JSON.parse(txt):null;
+}}
+async function loadFromCloud(){{
+  try{{const rows=await apiFetch('GET',`/${{TABLE_NAME}}?select=check_key,checked`);if(!rows)return;state={{}};rows.forEach(r=>{{state[r.check_key]=r.checked}});}}catch(e){{console.error('Load error',e)}}
+}}
+async function toggleCheck(key){{
+  const newVal=!state[key];
+  state[key]=newVal;
+  const patchR=await apiFetch('PATCH',`/${{TABLE_NAME}}?check_key=eq.${{encodeURIComponent(key)}}`,{{checked:newVal,updated_at:new Date().toISOString()}});
+  if(patchR!==null&&patchR.length>0) return;
+  const postR=await apiFetch('POST',`/${{TABLE_NAME}}`,{{check_key:key,checked:newVal,updated_at:new Date().toISOString()}});
+  if(postR===null){{state[key]=!newVal;}}
+}}
+async function refreshFromCloud(){{
+  document.getElementById('syncStatus').textContent='⟳ 同步中...';
+  await loadFromCloud();
+  document.getElementById('syncStatus').textContent='● 已同步';
+  render();
+  setTimeout(()=>{{document.getElementById('syncStatus').textContent='● 就绪'}},2000);
+}}
+
+function renderWeekSelector(){{
+  const weeks=buildWeekList(),todayWk=getTodayWeekKey();
+  if(!selectedWeek) selectedWeek=todayWk;
+  document.getElementById('weekSelector').innerHTML=weeks.map(w=>`<button class="wk-btn${{w.key===selectedWeek?' active':''}}${{w.key===todayWk?' today':''}}" onclick="selectWeek('${{w.key}}')">${{w.label}}</button>`).join('');
+  requestAnimationFrame(()=>{{const act=document.getElementById('weekSelector').querySelector('.wk-btn.active');if(act)act.scrollIntoView({{block:'nearest',inline:'center',behavior:'smooth'}});}});
+}}
+function renderDayTabs(){{
+  const todayIdx=getTodayDayIndex(),todayWk=getTodayWeekKey();
+  if(!selectedDay) selectedDay=todayIdx>=1&&todayIdx<=5?todayIdx:1;
+  if(selectedDay<1)selectedDay=1;if(selectedDay>6)selectedDay=6;
+  document.getElementById('dayTabs').innerHTML=DAY_NAMES.map((n,i)=>{{const idx=i+1;const isToday=(selectedWeek===todayWk&&idx===todayIdx);const isPast=(selectedWeek<todayWk)||(selectedWeek===todayWk&&idx<todayIdx);let cls='day-tab';if(idx===selectedDay)cls+=' active';if(isToday)cls+=' today';if(isPast&&idx<=5)cls+=' past';return `<div class="${{cls}}" onclick="selectDay(${{idx}})">${{n}}</div>`;}}).join('');
+}}
+function selectWeek(wk){{selectedWeek=wk;render();}}
+function selectDay(d){{selectedDay=d;render();}}
+
+function render(){{
+  renderWeekSelector();renderDayTabs();
+  const todayIdx=getTodayDayIndex(),todayWk=getTodayWeekKey();
+  const isLocked=(selectedWeek<todayWk)||(selectedWeek===todayWk&&selectedDay<todayIdx);
+  let displayItems=ITEMS.filter(item=>item.days.includes(selectedDay));
+  let total=displayItems.length,done=displayItems.filter(item=>state[`${{selectedWeek}}_d${{selectedDay}}_${{item.id}}`]).length;
+  document.getElementById('doneCount').textContent=done;
+  document.getElementById('todoCount').textContent=total-done;
+  document.getElementById('ratePct').textContent=total>0?Math.round(done/total*100)+'%':'--';
+  const cont=document.getElementById('content');
+  if(displayItems.length===0){{cont.innerHTML='<div class="empty-state">当天无检查事项</div>';return;}}
+  const priorityLabel={{'p1':'🔥 一级优先','p2':'🟧 二级优先','p3':'🔵 三级优先','p0':'🤍 当天处理'}};
+  cont.innerHTML=`<div class="section"><div class="section-header"><div class="section-title">当日事项</div><div class="section-count">${{done}}/${{total}}</div></div>${{displayItems.map(item=>{{const key=`${{selectedWeek}}_d${{selectedDay}}_${{item.id}}`;const checked=!!state[key];const pTag=item.priority?`<span class="priority-tag priority-${{item.priority}}">${{priorityLabel[item.priority]||''}}</span>`:'';return `<div class="item${{isLocked?' locked':''}}" onclick="${{isLocked?'':'toggleItem(\''+key+'\')'}}"><div class="chk-wrap"><div class="chk${{checked?' checked':''}}"></div></div><div class="item-body"><div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">${{pTag}}</div><div class="item-text">${{item.text.replace(/\n/g,'<br>')}}</div></div></div>`;}}).join('')}}</div>`;
+}}
+async function toggleItem(key){{await toggleCheck(key);render();}}
+async function init(){{await loadFromCloud();render();}}
+init();
+</script>
+</body>
+</html>
