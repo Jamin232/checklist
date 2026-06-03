@@ -46,7 +46,7 @@ function getTodayWeekKey(){
 function buildWeekList(){
   const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
   let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
-  while(d<=end(){
+  while(d<=end){
     const endD=new Date(d);endD.setDate(d.getDate()+6);
     const wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     weeks.push({key:wk,label:`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`});
