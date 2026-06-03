@@ -6,15 +6,19 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>客服组 checklist</title>
+<title>Checklist 总入口</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:20px}
-.header{background:linear-gradient(135deg,#e8832a,#d4690a);color:#fff;padding:20px 16px;text-align:center}
+.header{background:linear-gradient(135deg,#333,#111);color:#fff;padding:20px 16px;text-align:center}
 .header h1{font-size:20px;font-weight:700;margin-bottom:4px}
-.header .sub{font-size:13px;opacity:.85}
-.group-section{margin:10px 10px}
-.group-title{font-size:15px;font-weight:600;color:#333;padding:10px 4px 6px}
+.header .sub{font-size:13px;opacity:.7}
+.dept-section{margin:12px 10px}
+.dept-header{display:flex;align-items:center;gap:8px;padding:10px 4px 6px}
+.dept-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dept-title{font-size:16px;font-weight:700;color:#222}
+.dept-sub{font-size:11px;color:#999;margin-left:4px}
+.group-section{padding:0}
 .group-card{display:flex;align-items:center;justify-content:space-between;background:#fff;margin-bottom:6px;padding:14px 16px;border-radius:10px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:all .15s;text-decoration:none;color:inherit}
 .group-card:active{background:#f5f8ff;transform:scale(.98)}
 .group-card .left{display:flex;align-items:center;gap:10px}
@@ -23,6 +27,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 .icon-yizu{background:#fff3cd;color:#92400e}
 .icon-erzu{background:#dbeafe;color:#1e40af}
 .icon-sanuz{background:#d1fae5;color:#065f46}
+.icon-ganghou{background:#ede9fe;color:#5b21b6}
 .group-name{font-size:15px;font-weight:600}
 .group-members{font-size:12px;color:#888;margin-top:2px}
 .arrow{color:#ccc;font-size:18px}
@@ -30,51 +35,64 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 </style>
 </head>
 <body>
-<div class="header"><h1>📋 客服组 Checklist</h1><div class="sub">日常核查 · 云端同步</div></div>
+<div class="header"><h1>Checklist</h1><div class="sub">日常核查 · 云端同步</div></div>
 
-<div class="group-section">
-  <div class="group-title">🔴 大客户</div>
-  <a class="group-card" href="kefu_dakehu.html">
-    <div class="left"><div class="group-icon icon-dakehu">客</div>
-    <div><div class="group-name">大客户组</div><div class="group-members">陈小艳 · 李娟 · 李妙慧 · 招杏娟</div></div></div>
-    <div class="arrow">›</div>
-  </a>
+<!-- ====== 客服组 ====== -->
+<div class="dept-section">
+  <div class="dept-header">
+    <div class="dept-dot" style="background:#e8832a"></div>
+    <div class="dept-title">客服组</div>
+    <div class="dept-sub">20人 · 4个分组</div>
+  </div>
+
+  <div class="group-section">
+    <a class="group-card" href="kefu_dakehu.html">
+      <div class="left"><div class="group-icon icon-dakehu">客</div>
+      <div><div class="group-name">大客户组</div><div class="group-members">陈小艳 · 李娟 · 李妙慧 · 招杏娟</div></div></div>
+      <div class="arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group-section">
+    <a class="group-card" href="kefu_yizu.html">
+      <div class="left"><div class="group-icon icon-yizu">一</div>
+      <div><div class="group-name">一组</div><div class="group-members">陈海潮 · 陈兰 · 孟艳玲 · 庞洪海 · 吴嘉慧</div></div></div>
+      <div class="arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group-section">
+    <a class="group-card" href="kefu_erzu.html">
+      <div class="left"><div class="group-icon icon-erzu">二</div>
+      <div><div class="group-name">二组</div><div class="group-members">陈欣 · 黄婷穗 · 刘惠敏 · 庞淑芬 · 邱丽兰 · 王飞燕 · 杨青霞</div></div></div>
+      <div class="arrow">›</div>
+    </a>
+  </div>
+
+  <div class="group-section">
+    <a class="group-card" href="kefu_sanuz.html">
+      <div class="left"><div class="group-icon icon-sanuz">三</div>
+      <div><div class="group-name">三组</div><div class="group-members">潘美雪 · 唐敏琪 · 唐洁 · 许连杰</div></div></div>
+      <div class="arrow">›</div>
+    </a>
+  </div>
 </div>
 
-<div class="group-section">
-  <div class="group-title">🟠 一组</div>
-  <a class="group-card" href="kefu_yizu.html">
-    <div class="left"><div class="group-icon icon-yizu">一</div>
-    <div><div class="group-name">一组</div><div class="group-members">陈海潮 · 陈兰 · 孟艳玲 · 庞洪海 · 吴嘉慧</div></div></div>
-    <div class="arrow">›</div>
-  </a>
-</div>
+<!-- ====== 港后组 ====== -->
+<div class="dept-section">
+  <div class="dept-header">
+    <div class="dept-dot" style="background:#5b21b6"></div>
+    <div class="dept-title">港后组</div>
+    <div class="dept-sub">5人 · 周度检查</div>
+  </div>
 
-<div class="group-section">
-  <div class="group-title">🔵 二组</div>
-  <a class="group-card" href="kefu_erzu.html">
-    <div class="left"><div class="group-icon icon-erzu">二</div>
-    <div><div class="group-name">二组</div><div class="group-members">陈欣 · 黄婷穗 · 刘惠敏 · 庞淑芬 · 邱丽兰 · 王飞燕 · 杨青霞</div></div></div>
-    <div class="arrow">›</div>
-  </a>
-</div>
-
-<div class="group-section">
-  <div class="group-title">🟢 三组</div>
-  <a class="group-card" href="kefu_sanuz.html">
-    <div class="left"><div class="group-icon icon-sanuz">三</div>
-    <div><div class="group-name">三组</div><div class="group-members">潘美雪 · 唐敏琪 · 唐洁 · 许连杰</div></div></div>
-    <div class="arrow">›</div>
-  </a>
-</div>
-
-<div class="group-section">
-  <div class="group-title">🟣 港后</div>
-  <a class="group-card" href="ganghou.html">
-    <div class="left"><div class="group-icon" style="background:#ede9fe;color:#5b21b6">港</div>
-    <div><div class="group-name">港后检查清单</div><div class="group-members">Galaxy · 梅霞 · 志玲 · simi · Ashley</div></div></div>
-    <div class="arrow">›</div>
-  </a>
+  <div class="group-section">
+    <a class="group-card" href="ganghou.html">
+      <div class="left"><div class="group-icon icon-ganghou">港</div>
+      <div><div class="group-name">港后检查清单</div><div class="group-members">Galaxy · 梅霞 · 志玲 · simi · Ashley</div></div></div>
+      <div class="arrow">›</div>
+    </a>
+  </div>
 </div>
 
 <div class="footer">数据实时同步至 Supabase · 勾选即保存</div>
