@@ -68,12 +68,10 @@ async function fetchPersonStats(person){
   // 统计本周（selectedWeek）D1-D5 的完成情况
   const wk=selectedWeek||todayWk;
   let total=0,done=0;
-  // 简化：统计所有已勾选数 / 总事项数（按本周）
-  const allKeys=rows.map(r=>r.check_key);
-  // 只统计本周 D1-D5
+  // 用 ITEMS_PER_DAY 的总和作为总项数（D1-D5 共40项），只统计 Supabase 中已勾选的
   const prefix=`${wk}_d`;
-  const weekRows=rows.filter(r=>r.check_key.startsWith(prefix)&&r.check_key.charAt(prefix.length)>= '1'&&r.check_key.charAt(prefix.length)<='5');
-  total=weekRows.length;
+  const weekRows=rows.filter(r=>r.check_key.startsWith(prefix)&&r.check_key.charAt(prefix.length)>='1'&&r.check_key.charAt(prefix.length)<='5');
+  total=Object.values(ITEMS_PER_DAY).reduce((a,b)=>a+b,0);
   done=weekRows.filter(r=>r.checked).length;
   return{done,todo:total-done,rate:total>0?Math.round(done/total*100)+'%':'--'};
 }catch(e){return{done:0,todo:0,rate:'--'};}
