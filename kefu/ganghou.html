@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>港后检查清单</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;padding-bottom:30px}
+.header{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;padding:16px 16px 12px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
+.summary{display:flex;gap:8px;padding:10px 12px;background:#fff;border-bottom:0.5px solid #f0f0f0;position:sticky;top:56px;z-index:9}
+.summary .card{flex:1;text-align:center;padding:8px 6px;border-radius:8px;background:#f8f9fb}
+.summary .card .num{font-size:20px;font-weight:700}
+.summary .card .lbl{font-size:10px;color:#888;margin-top:2px}
+.summary .done .num{color:#0a8043}
+.summary .todo .num{color:#e37400}
+.summary .rate .num{color:#1a73e8}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:122px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s;white-space:nowrap}
+.wk-btn.active{background:#1a73e8;color:#fff;font-weight:600}
+.person-section{margin:10px 10px 0}
+.person-header{display:flex;align-items:center;justify-content:space-between;padding:8px 4px}
+.person-name{font-size:15px;font-weight:700;color:#222}
+.person-count{font-size:11px;color:#888}
+.item-row{display:flex;align-items:center;gap:10px;background:#fff;padding:10px 14px;margin-bottom:4px;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.04);transition:all .12s;-webkit-tap-highlight-color:transparent}
+.item-row:active{background:#f0f4ff}
+.item-check{width:22px;height:22px;border-radius:50%;border:2px solid #ccc;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.item-check.done{background:#0a8043;border-color:#0a8043}
+.item-check.done::after{content:'✓';color:#fff;font-size:13px;font-weight:700}
+.item-text{font-size:13px;line-height:1.4;color:#333;flex:1}
+.sync-status{position:fixed;bottom:20px;left:16px;font-size:11px;color:#888;background:rgba(255,255,255,.9);padding:4px 10px;border-radius:10px;z-index:100}
+.btn-refresh{position:fixed;bottom:16px;right:16px;width:44px;height:44px;border-radius:50%;background:#1a73e8;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(26,115,232,.3);z-index:100;display:flex;align-items:center;justify-content:center}
+.btn-refresh:active{transform:scale(.9)}
+.btn-back{position:fixed;bottom:70px;left:16px;width:44px;height:44px;border-radius:50%;background:#1a73e8;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(26,115,232,.3);z-index:100;display:flex;align-items:center;justify-content:center;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="header"><h1>港后检查清单</h1><div class="sub">2026年6月 - 12月 · 周度检查</div></div>
+<div class="summary">
+  <div class="card done"><div class="num" id="doneCount">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoCount">0</div><div class="lbl">待检查</div></div>
+  <div class="card rate"><div class="num" id="ratePct">0%</div><div class="lbl">完成率</div></div>
+</div>
+<div class="week-selector" id="weekSelector"></div>
+<div id="content"></div>
+<a class="btn-back" href="index.html" title="返回总入口">←</a>
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步">⟳</button>
+<div class="sync-status" id="syncStatus">● 就绪</div>
+
+<script>
+const TABLE_NAME='ganghou_checklist';
+const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+// 检查项定义
+const ITEMS=[
+  {id:'galaxy_tax',person:'Galaxy',text:'检查税金单录入情况'},
+  {id:'galaxy_inspect',person:'Galaxy',text:'检查查验费录入情况'},
+  {id:'meixia_track',person:'梅霞',text:'检查轨迹核查情况'},
+  {id:'zhiling_forecast',person:'志玲',text:'检查预报完成情况'},
+  {id:'simi_overdue',person:'simi',text:'检查超期订单情况'},
+  {id:'ashley_title',person:'Ashley',text:'抬头分配情况'},
+  {id:'ashley_exist',person:'Ashley',text:'现有抬头留存情况'},
+  {id:'ashley_bill',person:'Ashley',text:'对外清关账单检查'},
+];
+
+let state={},selectedWeek=null;
+
+function getTodayWeekKey(){
+  const d=new Date();const dow=d.getDay()||7;
+  const mon=new Date(d);mon.setDate(d.getDate()-dow+1);
+  return `W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+}
+
+function buildWeekList(){
+  const weeks=[],start=new Date(2026,5,1),end=new Date(2026,11,31);
+  let d=new Date(start);const fd=d.getDay();d.setDate(d.getDate()-(fd===0?6:fd-1));
+  while(d<=end){
+    const endD=new Date(d);endD.setDate(d.getDate()+6);
+    const wk=`W${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    weeks.push({key:wk,label:`${d.getMonth()+1}/${d.getDate()}-${endD.getMonth()+1}/${endD.getDate()}`});
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
+
+async function apiFetch(method,path,body){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,
+    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'},
+    body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null}
+  const txt=await r.text();return txt?JSON.parse(txt):null;
+}
+
+async function loadFromCloud(){
+  try{
+    const rows=await apiFetch('GET',`/${TABLE_NAME}?select=check_key,checked`);
+    if(!rows)return;
+    state={};rows.forEach(r=>{state[r.check_key]=r.checked;});
+  }catch(e){console.error('Load error',e)}
+}
+
+async function toggleCheck(itemId){
+  const wk=selectedWeek||getTodayWeekKey();
+  const key=`${wk}_${itemId}`;
+  const newVal=!state[key];
+  state[key]=newVal;
+  render();
+  // PATCH then POST for upsert
+  const patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{checked:newVal,updated_at:new Date().toISOString()});
+  if(patchR!==null&&patchR.length>0)return;
+  const postR=await apiFetch('POST',`/${TABLE_NAME}`,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});
+  if(postR===null){state[key]=!newVal;render();}
+}
+
+async function refreshFromCloud(){
+  document.getElementById('syncStatus').textContent='⟳ 同步中...';
+  await loadFromCloud();
+  document.getElementById('syncStatus').textContent='● 已同步';
+  render();
+  setTimeout(()=>{document.getElementById('syncStatus').textContent='● 就绪'},2000);
+}
+
+function renderWeekSelector(){
+  const weeks=buildWeekList(),todayWk=getTodayWeekKey();
+  if(!selectedWeek) selectedWeek=todayWk;
+  document.getElementById('weekSelector').innerHTML=weeks.map(w=>
+    `<button class="wk-btn${w.key===selectedWeek?' active':''}${w.key===todayWk?' today':''}" onclick="selectWeek('${w.key}')">${w.label}</button>`
+  ).join('');
+  requestAnimationFrame(()=>{
+    const act=document.getElementById('weekSelector').querySelector('.wk-btn.active');
+    if(act)act.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+  });
+}
+
+function render(){
+  renderWeekSelector();
+  const wk=selectedWeek||getTodayWeekKey();
+
+  // 按负责人分组
+  const groups={};
+  ITEMS.forEach(item=>{
+    if(!groups[item.person]) groups[item.person]=[];
+    groups[item.person].push(item);
+  });
+
+  const personOrder=['Galaxy','梅霞','志玲','simi','Ashley'];
+  let html='';
+  let totalDone=0,totalItems=0;
+
+  personOrder.forEach(person=>{
+    const items=groups[person]||[];
+    let personDone=0;
+    html+=`<div class="person-section"><div class="person-header"><div class="person-name">${person}</div><div class="person-count" id="cnt-${person}"></div></div>`;
+
+    items.forEach(item=>{
+      const key=`${wk}_${item.id}`;
+      const checked=state[key]===true;
+      if(checked) personDone++;
+      totalItems++;
+      html+=`<div class="item-row" onclick="toggleCheck('${item.id}')">
+        <div class="item-check${checked?' done':''}"></div>
+        <div class="item-text">${item.text}</div>
+      </div>`;
+    });
+    totalDone+=personDone;
+    html+=`</div>`;
+  });
+
+  document.getElementById('content').innerHTML=html;
+  document.getElementById('doneCount').textContent=totalDone;
+  document.getElementById('todoCount').textContent=totalItems-totalDone;
+  document.getElementById('ratePct').textContent=totalItems>0?Math.round(totalDone/totalItems*100)+'%':'0%';
+
+  // 更新每人计数
+  personOrder.forEach(person=>{
+    const el=document.getElementById(`cnt-${person}`);
+    if(!el)return;
+    const items=groups[person]||[];
+    let d=0;items.forEach(item=>{if(state[`${wk}_${item.id}`]===true)d++;});
+    el.textContent=`${d}/${items.length}`;
+  });
+}
+
+function selectWeek(wk){selectedWeek=wk;render();}
+
+loadFromCloud().then(()=>render());
+</script>
+</body>
+</html>
