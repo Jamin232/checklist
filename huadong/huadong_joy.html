@@ -54,7 +54,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Micr
 </style>
 </head>
 <body>
-<div class="header"><h1>华东港前核查 - Joy</h1><div class="sub">排柜+整柜 · 云端同步</div></div>
+<div class="header"><h1>华东港前核查 - Joy</h1><div class="sub">整柜 · 云端同步</div></div>
 
 <div class="summary">
   <div class="card done"><div class="num" id="doneNum">0</div><div class="lbl">已完成</div></div>
@@ -79,40 +79,6 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 const DAY_NAMES=['周一','周二','周三','周四','周五'];
 
 const ITEMS = [
-  {id:'p1', name:'核查系统船期余位是否准确', type:'daily', freq:2, freqLabels:['11点','16点'],
-   note:'每天两次，11点和16点',
-   persons:['Joy']},
-  {id:'p2', name:'更新起运港查验等异常柜子进度', type:'daily', freq:1,
-   note:'每天11点前，含群聊通知和系统添加物流轨迹',
-   persons:['Joy']},
-  {id:'p3', name:'轨迹更新到最新状态', type:'daily', freq:1,
-   note:'D1早上11点前，D2-6早上12点前',
-   persons:['Joy']},
-  {id:'p4', name:'余位群聊播报收货', type:'daily', freq:3, freqLabels:['第1次','第2次','第3次'],
-   note:'每天至少3次，18点前',
-   persons:['Joy']},
-  {id:'p5', name:'检查前一天转运货物中转库位', type:'daily', freq:1,
-   note:'每天12点前，检查是否都已维护齐系统',
-   persons:['Joy']},
-  {id:'p6', name:'各仓库盘点', type:'weekly', days:[1],
-   note:'每周一，16点前',
-   persons:['Joy']},
-  {id:'p7', name:'ISF申报检查', type:'daily', freq:1,
-   note:'每天16点前，开船前48小时申报，含预报和系统维护匹配状态',
-   persons:['Joy']},
-  {id:'p8', name:'检查工单进度', type:'daily', freq:1,
-   note:'每天17点前',
-   persons:['Joy']},
-  {id:'p9', name:'检查系放单情况维护', type:'daily', freq:1,
-   note:'每天17点前，到港72小时前要完成',
-   persons:['Joy']},
-  {id:'p10', name:'检查客户新上传报关资料核对件进度', type:'daily', freq:1,
-   note:'每天18点前，当天16点前上传的要当天发出给关上出核对件',
-   persons:['Joy']},
-  {id:'p11', name:'复核投保是否齐全', type:'weekly', days:[3],
-   note:'每周三18点前，上周三到本周二装柜订单',
-   persons:['Joy']},
-
   // === 整柜岗位事项 ===
   {id:'z1', name:'[整柜] 核查系统船期余位是否准确', type:'daily', freq:1,
    note:'每天18点前',
