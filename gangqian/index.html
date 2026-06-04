@@ -225,6 +225,19 @@ async function loadFromCloud(){
   }catch(e){console.error('Load error',e);}
 }
 
+function showToast(msg,isErr){
+  let t=document.getElementById('_toast');
+  if(!t){
+    t=document.createElement('div');t.id='_toast';
+    t.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:20px;font-size:13px;z-index:999;transition:all .3s;pointer-events:none;opacity:0';
+    document.body.appendChild(t);
+  }
+  t.style.background=isErr?'#fef2f2':'#d1fae5';
+  t.style.color=isErr?'#dc2626':'#059669';
+  t.textContent=msg;t.style.opacity='1';
+  setTimeout(()=>{t.style.opacity='0';},2000);
+}
+
 async function toggleCheck(key){
   let newVal=!state[key];
   // 先用 POST + merge-duplicates 做 upsert（一步到位）
@@ -232,21 +245,23 @@ async function toggleCheck(key){
     check_key:key,checked:newVal,updated_at:new Date().toISOString()
   });
   if(result!==null){
-    // upsert 成功
     state[key]=newVal;
-  }else{
-    // POST 失败，尝试 PATCH
-    let patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{
-      checked:newVal,updated_at:new Date().toISOString()
-    });
-    if(patchR!==null){
-      state[key]=newVal;
-    }else{
-      // 都失败了，回滚本地状态
-      state[key]=!newVal;
-      console.error('Save failed for key:',key);
-    }
+    showToast(newVal?'已勾选 ✓':'已取消',false);
+    return;
   }
+  // POST 失败，尝试 PATCH
+  let patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{
+    checked:newVal,updated_at:new Date().toISOString()
+  });
+  if(patchR!==null){
+    state[key]=newVal;
+    showToast(newVal?'已勾选 ✓':'已取消',false);
+    return;
+  }
+  // 都失败 — 回滚 + 提示
+  state[key]=!newVal;
+  showToast('保存失败，请检查网络后刷新重试',true);
+  console.error('Save failed for key:',key);
 }
 
 async function refreshFromCloud(){
