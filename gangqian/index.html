@@ -400,8 +400,9 @@ function render(){
         let ck=!!state[c.key];
         let personLabel=c.person;
         if(freqLabel) personLabel += ' · ' + freqLabel;
-        checkRowsHtml += `<div class="check-row${ck?' checked':''}" onclick="${isLocked?'':'handleCheck(\'${c.key}\')'}">
-          <input type="checkbox" ${ck?'checked':''} onclick="${isLocked?'event.preventDefault()':'event.stopPropagation();handleCheck(\'${c.key}\')'}">
+        let keyEnc=encodeURIComponent(c.key);
+        checkRowsHtml += `<div class="check-row${ck?' checked':''}" data-key="${keyEnc}" ${isLocked?'':'style="cursor:pointer"'}>
+          <input type="checkbox" ${ck?'checked':''} data-key="${keyEnc}">
           <span class="check-person">${personLabel}</span>
           <span class="check-status">✓</span>
         </div>`;
@@ -418,6 +419,23 @@ function render(){
       <div class="check-rows">${checkRowsHtml}</div>
     </div>`;
   }).join('');
+
+  // 事件委托 — 所有 checkbox 点击通过 data-key 传值，避免 innerHTML onclick 嵌套引号问题
+  if(!isLocked){
+    cont.querySelectorAll('.check-row[data-key]').forEach(row=>{
+      row.addEventListener('click',function(e){
+        let key=decodeURIComponent(this.dataset.key);
+        if(key) handleCheck(key);
+      });
+    });
+    cont.querySelectorAll('input[type=checkbox][data-key]').forEach(cb=>{
+      cb.addEventListener('click',function(e){
+        e.stopPropagation();
+        let key=decodeURIComponent(this.dataset.key);
+        if(key) handleCheck(key);
+      });
+    });
+  }
 }
 
 async function handleCheck(key){
