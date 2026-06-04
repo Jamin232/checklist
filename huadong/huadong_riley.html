@@ -128,7 +128,7 @@ function getTodayDayIndex(){ let d=new Date(); let dow=d.getDay(); return dow===
 
 function buildWeekList(){
   let weeks=[];
-  let start=new Date(2026,0,1);
+  let start=new Date(2026,5,1);
   let d=new Date(start);
   let fd=d.getDay(); d.setDate(d.getDate()-(fd===0?6:fd-1));
   let end=new Date(2026,11,31);
