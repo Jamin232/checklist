@@ -194,27 +194,15 @@ function getWeekMonday(wk){
 
 // ===== Supabase =====
 async function apiFetch(method,path,body){
-  try{
-    let headers={
+  let r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,headers:{
       'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,
-      'Content-Type':'application/json'
-    };
-    // POST 时用 merge-duplicates 做 upsert，其他请求用 return=representation
-    if(method==='POST'){
-      headers['Prefer']='resolution=merge-duplicates';
-    }
-    let r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
-      method,headers,body:body?JSON.stringify(body):undefined
-    });
-    if(!r.ok){
-      let errTxt='';
-      try{errTxt=await r.text();}catch(e){}
-      console.error('API error',r.status,errTxt);
-      return null;
-    }
-    let txt=await r.text();
-    return txt?JSON.parse(txt):{};
-  }catch(e){console.error('API fetch error',e);return null;}
+      'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'
+    },body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null;}
+  let txt=await r.text();
+  return txt?JSON.parse(txt):null;
 }
 
 async function loadFromCloud(){
@@ -240,28 +228,12 @@ function showToast(msg,isErr){
 
 async function toggleCheck(key){
   let newVal=!state[key];
-  // 先用 POST + merge-duplicates 做 upsert（一步到位）
-  let result=await apiFetch('POST',`/${TABLE_NAME}`,{
-    check_key:key,checked:newVal,updated_at:new Date().toISOString()
-  });
-  if(result!==null){
-    state[key]=newVal;
-    showToast(newVal?'已勾选 ✓':'已取消',false);
-    return;
-  }
-  // POST 失败，尝试 PATCH
-  let patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{
-    checked:newVal,updated_at:new Date().toISOString()
-  });
-  if(patchR!==null){
-    state[key]=newVal;
-    showToast(newVal?'已勾选 ✓':'已取消',false);
-    return;
-  }
-  // 都失败 — 回滚 + 提示
-  state[key]=!newVal;
-  showToast('保存失败，请检查网络后刷新重试',true);
-  console.error('Save failed for key:',key);
+  state[key]=newVal;
+  let patchR=await apiFetch('PATCH',`/${TABLE_NAME}?check_key=eq.${encodeURIComponent(key)}`,{checked:newVal,updated_at:new Date().toISOString()});
+  if(patchR!==null&&patchR.length>0){showToast(newVal?'已勾选 ✓':'已取消',false);return;}
+  let postR=await apiFetch('POST',`/${TABLE_NAME}`,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});
+  if(postR===null){state[key]=!newVal;showToast('保存失败，请检查网络后刷新重试',true);}
+  else{showToast(newVal?'已勾选 ✓':'已取消',false);}
 }
 
 async function refreshFromCloud(){
@@ -391,7 +363,7 @@ function render(){
     let allDone=itemDone===itemTotal;
     let anyDone=itemDone>0;
 
-    // 按频次分组渲染勾选框
+    // 按频次分组渲染勾选框（完全参照 kefu_zonghe 的字符串拼接方式）
     let checkRowsHtml='';
     for(let fi=0;fi<freq;fi++){
       let freqLabel=labels?labels[fi]:null;
@@ -400,42 +372,25 @@ function render(){
         let ck=!!state[c.key];
         let personLabel=c.person;
         if(freqLabel) personLabel += ' · ' + freqLabel;
-        let keyEnc=encodeURIComponent(c.key);
-        checkRowsHtml += `<div class="check-row${ck?' checked':''}" data-key="${keyEnc}" ${isLocked?'':'style="cursor:pointer"'}>
-          <input type="checkbox" ${ck?'checked':''} data-key="${keyEnc}">
-          <span class="check-person">${personLabel}</span>
-          <span class="check-status">✓</span>
-        </div>`;
+        // 关键：用字符串拼接而非模板字符串内插值，避免 innerHTML 解析错误
+        checkRowsHtml += '<div class="check-row'+(ck?' checked':'')+'" onclick="'+(isLocked?'':'handleCheck(\''+c.key+'\')')+'">'+
+          '<input type="checkbox" '+(ck?'checked':'')+' onclick="'+(isLocked?'event.preventDefault()':'event.stopPropagation();handleCheck(\''+c.key+'\')')+'">'+
+          '<span class="check-person">'+personLabel+'</span>'+
+          '<span class="check-status">✓</span>'+
+          '</div>';
       }
     }
 
-    return `<div class="item-card${isLocked?' locked':''}">
-      <div class="item-header">
-        <div class="item-dot" style="background:${allDone?'#059669':anyDone?'#f59e0b':'#d1d5db'}"></div>
-        <div class="item-name">${it.name}</div>
-        <div class="item-stats">${itemDone}/${itemTotal}</div>
-      </div>
-      ${it.note?`<div class="item-note">${it.note}</div>`:''}
-      <div class="check-rows">${checkRowsHtml}</div>
-    </div>`;
+    return '<div class="item-card'+(isLocked?' locked':'')+'">'+
+      '<div class="item-header">'+
+        '<div class="item-dot" style="background:'+(allDone?'#059669':anyDone?'#f59e0b':'#d1d5db')+'"></div>'+
+        '<div class="item-name">'+it.name+'</div>'+
+        '<div class="item-stats">'+itemDone+'/'+itemTotal+'</div>'+
+      '</div>'+
+      (it.note?'<div class="item-note">'+it.note+'</div>':'')+
+      '<div class="check-rows">'+checkRowsHtml+'</div>'+
+      '</div>';
   }).join('');
-
-  // 事件委托 — 所有 checkbox 点击通过 data-key 传值，避免 innerHTML onclick 嵌套引号问题
-  if(!isLocked){
-    cont.querySelectorAll('.check-row[data-key]').forEach(row=>{
-      row.addEventListener('click',function(e){
-        let key=decodeURIComponent(this.dataset.key);
-        if(key) handleCheck(key);
-      });
-    });
-    cont.querySelectorAll('input[type=checkbox][data-key]').forEach(cb=>{
-      cb.addEventListener('click',function(e){
-        e.stopPropagation();
-        let key=decodeURIComponent(this.dataset.key);
-        if(key) handleCheck(key);
-      });
-    });
-  }
 }
 
 async function handleCheck(key){
