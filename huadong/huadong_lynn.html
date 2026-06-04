@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>华东港前核查 - Lynn</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f0f2f5;color:#222;padding-bottom:50px;-webkit-tap-highlight-color:transparent}
+.header{background:linear-gradient(135deg,#e67e22,#d35400);color:#fff;padding:14px 16px 10px;position:sticky;top:0;z-index:10}
+.header h1{font-size:17px;font-weight:600;margin-bottom:2px}
+.header .sub{font-size:12px;opacity:.85}
+.summary{display:flex;gap:10px;padding:10px 14px;background:#fff;position:sticky;top:58px;z-index:9;border-bottom:0.5px solid #eee}
+.summary .card{flex:1;text-align:center;padding:10px 6px;border-radius:10px;background:#f8f9fb}
+.summary .card .num{font-size:22px;font-weight:700}
+.summary .card .lbl{font-size:11px;color:#888;margin-top:2px}
+.summary .card.done .num{color:#059669}
+.summary .card.todo .num{color:#dc2626}
+.summary .card.rate .num{color:#e67e22}
+.week-selector{display:flex;gap:4px;padding:8px 10px;background:#fff;overflow-x:auto;border-bottom:0.5px solid #f0f0f0;position:sticky;top:118px;z-index:8;-webkit-overflow-scrolling:touch}
+.week-selector::-webkit-scrollbar{display:none}
+.wk-btn{flex-shrink:0;padding:6px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.wk-btn.active{background:#e67e22;color:#fff;font-weight:600}
+.wk-btn.past{color:#bbb}
+.day-tabs{display:flex;background:#fff;position:sticky;top:158px;z-index:7;border-bottom:0.5px solid #eee}
+.day-tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.day-tab.active{color:#e67e22;border-bottom-color:#e67e22;font-weight:600}
+.day-tab.today{color:#e67e22}
+.day-tab.past{color:#bbb}
+.day-tab.future{color:#bbb}
+.item-card{background:#fff;border-radius:10px;padding:12px 16px;margin:8px 10px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:opacity .2s}
+.item-card.locked{opacity:.55;pointer-events:none}
+.item-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.item-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.item-name{font-size:14px;font-weight:600;flex:1}
+.item-stats{font-size:11px;color:#888}
+.item-note{font-size:11px;color:#999;margin-bottom:8px;padding-left:16px;line-height:1.5}
+.check-rows{display:flex;flex-wrap:wrap;gap:6px}
+.check-row{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:#f8f9fc;cursor:pointer;transition:all .15s}
+.check-row:hover{background:#fef3e2}
+.check-row.checked{background:#fef9e7}
+.check-row input[type=checkbox]{width:18px;height:18px;accent-color:#e67e22;cursor:pointer;flex-shrink:0}
+.check-person{font-size:12px;color:#555;white-space:nowrap}
+.check-row.checked .check-person{color:#e67e22;font-weight:500}
+.check-status{font-size:11px;color:#e67e22;display:none}
+.check-row.checked .check-status{display:inline}
+.legend{font-size:11px;color:#aaa;text-align:center;padding:12px}
+.empty-hint{text-align:center;padding:30px;color:#aaa;font-size:13px}
+.btn-refresh{position:fixed;bottom:20px;right:16px;width:44px;height:44px;border-radius:50%;background:#e67e22;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(230,126,34,.3);z-index:100;display:flex;align-items:center;justify-content:center}
+.btn-refresh:active{transform:scale(.9)}
+</style>
+</head>
+<body>
+<div class="header"><h1>华东港前核查 - Lynn</h1><div class="sub">排柜岗位 · 云端同步</div></div>
+
+<div class="summary">
+  <div class="card done"><div class="num" id="doneNum">0</div><div class="lbl">已完成</div></div>
+  <div class="card todo"><div class="num" id="todoNum">0</div><div class="lbl">待检查</div></div>
+  <div class="card rate"><div class="num" id="rateNum">--</div><div class="lbl">完成率</div></div>
+</div>
+
+<div class="week-selector" id="weekSelector"></div>
+<div class="day-tabs" id="dayTabs"></div>
+<div id="content"></div>
+
+<button class="btn-refresh" onclick="refreshFromCloud()" title="同步云端数据">⟳</button>
+
+<div class="legend">每项权重均等 · 一日多次按次数均摊 · 勾选即保存</div>
+
+<script>
+const TABLE_NAME='huadong_lynn';
+const PERSON_NAME='Lynn';
+const SUPABASE_URL='https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+const DAY_NAMES=['周一','周二','周三','周四','周五'];
+
+const ITEMS = [
+  {id:'p1', name:'核查系统船期余位是否准确', type:'daily', freq:2, freqLabels:['11点','16点'],
+   note:'每天两次，11点和16点',
+   persons:['Lynn']},
+  {id:'p2', name:'更新起运港查验等异常柜子进度', type:'daily', freq:1,
+   note:'每天11点前，含群聊通知和系统添加物流轨迹',
+   persons:['Lynn']},
+  {id:'p3', name:'轨迹更新到最新状态', type:'daily', freq:1,
+   note:'D1早上11点前，D2-6早上12点前',
+   persons:['Lynn']},
+  {id:'p4', name:'余位群聊播报收货', type:'daily', freq:3, freqLabels:['第1次','第2次','第3次'],
+   note:'每天至少3次，18点前',
+   persons:['Lynn']},
+  {id:'p5', name:'检查前一天转运货物中转库位', type:'daily', freq:1,
+   note:'每天12点前，检查是否都已维护齐系统',
+   persons:['Lynn']},
+  {id:'p6', name:'各仓库盘点', type:'weekly', days:[1],
+   note:'每周一，16点前',
+   persons:['Lynn']},
+  {id:'p7', name:'ISF申报检查', type:'daily', freq:1,
+   note:'每天16点前，开船前48小时申报，含预报和系统维护匹配状态',
+   persons:['Lynn']},
+  {id:'p8', name:'检查工单进度', type:'daily', freq:1,
+   note:'每天17点前',
+   persons:['Lynn']},
+  {id:'p9', name:'检查系放单情况维护', type:'daily', freq:1,
+   note:'每天17点前，到港72小时前要完成',
+   persons:['Lynn']},
+  {id:'p10', name:'检查客户新上传报关资料核对件进度', type:'daily', freq:1,
+   note:'每天18点前，当天16点前上传的要当天发出给关上出核对件',
+   persons:['Lynn']},
+  {id:'p11', name:'复核投保是否齐全', type:'weekly', days:[3],
+   note:'每周三18点前，上周三到本周二装柜订单',
+   persons:['Lynn']},
+];
+
+let state={};
+let selectedWeek=null;
+let selectedDay=1;
+
+function getTodayWeekKey(){
+  let d=new Date();
+  let dow=d.getDay()||7;
+  let mon=new Date(d); mon.setDate(d.getDate()-dow+1);
+  return 'W'+mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+}
+function getTodayDayIndex(){ let d=new Date(); let dow=d.getDay(); return dow===0?7:dow; }
+
+function buildWeekList(){
+  let weeks=[];
+  let start=new Date(2026,0,1);
+  let d=new Date(start);
+  let fd=d.getDay(); d.setDate(d.getDate()-(fd===0?6:fd-1));
+  let end=new Date(2026,11,31);
+  while(d<=end){
+    let endD=new Date(d); endD.setDate(d.getDate()+6);
+    let wk='W'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    let label=(d.getMonth()+1)+'/'+d.getDate()+'-'+(endD.getMonth()+1)+'/'+endD.getDate();
+    weeks.push({key:wk,label});
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
+
+function getWeekMonday(wk){
+  let parts=wk.substring(1).split('-');
+  return new Date(+parts[0],+parts[1]-1,+parts[2]);
+}
+
+async function apiFetch(method,path,body){
+  let r=await fetch(SUPABASE_URL+'/rest/v1'+path,{
+    method,headers:{
+      'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,
+      'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'
+    },body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok){console.error('API error',r.status);return null;}
+  let txt=await r.text();
+  return txt?JSON.parse(txt):null;
+}
+
+async function loadFromCloud(){
+  try{
+    let rows=await apiFetch('GET','/'+TABLE_NAME+'?select=check_key,checked');
+    if(!rows)return;
+    state={}; rows.forEach(r=>{state[r.check_key]=r.checked;});
+  }catch(e){console.error('Load error',e);}
+}
+
+function showToast(msg,isErr){
+  let t=document.getElementById('_toast');
+  if(!t){
+    t=document.createElement('div');t.id='_toast';
+    t.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:20px;font-size:13px;z-index:999;transition:all .3s;pointer-events:none;opacity:0';
+    document.body.appendChild(t);
+  }
+  t.style.background=isErr?'#fef2f2':'#d1fae5';
+  t.style.color=isErr?'#dc2626':'#059669';
+  t.textContent=msg;t.style.opacity='1';
+  setTimeout(()=>{t.style.opacity='0';},2000);
+}
+
+async function toggleCheck(key){
+  let newVal=!state[key];
+  state[key]=newVal;
+  let patchR=await apiFetch('PATCH','/'+TABLE_NAME+'?check_key=eq.'+encodeURIComponent(key),{checked:newVal,updated_at:new Date().toISOString()});
+  if(patchR!==null&&patchR.length>0){showToast(newVal?'已勾选 ✓':'已取消',false);return;}
+  let postR=await apiFetch('POST','/'+TABLE_NAME,{check_key:key,checked:newVal,updated_at:new Date().toISOString()});
+  if(postR===null){state[key]=!newVal;showToast('保存失败，请检查网络后刷新重试',true);}
+  else{showToast(newVal?'已勾选 ✓':'已取消',false);}
+}
+
+async function refreshFromCloud(){
+  await loadFromCloud();
+  render();
+}
+
+function renderWeekSelector(){
+  let weeks=buildWeekList();
+  let todayWk=getTodayWeekKey();
+  if(!selectedWeek)selectedWeek=todayWk;
+  let cont=document.getElementById('weekSelector');
+  cont.innerHTML=weeks.map(w=>{
+    let cls='wk-btn';
+    if(w.key===selectedWeek)cls+=' active';
+    if(w.key<todayWk)cls+=' past';
+    return '<button class="'+cls+'" onclick="selectWeek(\''+w.key+'\')">'+w.label+'</button>';
+  }).join('');
+  requestAnimationFrame(()=>{
+    let act=cont.querySelector('.wk-btn.active');
+    if(act)act.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+  });
+}
+
+function renderDayTabs(){
+  let todayIdx=getTodayDayIndex();
+  let todayWk=getTodayWeekKey();
+  if(!selectedDay)selectedDay=todayIdx>=1&&todayIdx<=5?todayIdx:1;
+  let cont=document.getElementById('dayTabs');
+  cont.innerHTML=DAY_NAMES.map((n,i)=>{
+    let idx=i+1;
+    let isToday=(selectedWeek===todayWk&&idx===todayIdx);
+    let isPast=(selectedWeek<todayWk)||(selectedWeek===todayWk&&idx<todayIdx);
+    let isFuture=(selectedWeek>todayWk)||(selectedWeek===todayWk&&idx>todayIdx);
+    let cls='day-tab';
+    if(idx===selectedDay)cls+=' active';
+    if(isToday)cls+=' today';
+    if(isPast)cls+=' past';
+    if(isFuture)cls+=' future';
+    return '<div class="'+cls+'" onclick="selectDay('+idx+')">'+n+'</div>';
+  }).join('');
+}
+
+function selectWeek(wk){selectedWeek=wk;render();}
+function selectDay(d){selectedDay=d;render();}
+
+function render(){
+  renderWeekSelector();
+  renderDayTabs();
+
+  let todayIdx=getTodayDayIndex();
+  let todayWk=getTodayWeekKey();
+  let isPastWeek=selectedWeek<todayWk;
+  let isPastDay=selectedWeek===todayWk&&selectedDay<todayIdx;
+  let isFutureWeek=selectedWeek>todayWk;
+  let isFutureDay=selectedWeek===todayWk&&selectedDay>todayIdx;
+  let isLocked=isPastWeek||isPastDay||isFutureWeek||isFutureDay;
+
+  let todayItems=[];
+  for(let item of ITEMS){
+    if(item.type==='daily'){
+      todayItems.push({...item});
+    }else if(item.type==='weekly'){
+      if(item.days.includes(selectedDay)){
+        todayItems.push({...item});
+      }
+    }
+  }
+
+  let allKeys=[];
+  let allChecks=[];
+
+  for(let it of todayItems){
+    let freq=it.freq||1;
+    let labels=it.freqLabels||null;
+    for(let fi=0;fi<freq;fi++){
+      let freqLabel=labels?labels[fi]:null;
+      for(let p of it.persons){
+        let key=selectedWeek+'_d'+selectedDay+'_'+it.id+'_f'+fi+'_'+p;
+        allKeys.push(key);
+        allChecks.push({item:it,freqIdx:fi,freqLabel,person:p,key});
+      }
+    }
+  }
+
+  let itemGroups=[];
+  for(let it of todayItems){
+    itemGroups.push(it);
+  }
+
+  let totalItems=itemGroups.length;
+
+  let itemRates={};
+  for(let it of itemGroups){
+    let checks=allChecks.filter(c=>c.item.id===it.id);
+    let done=checks.filter(c=>state[c.key]).length;
+    itemRates[it.id]=checks.length>0?done/checks.length:0;
+  }
+  let overallRate=totalItems>0?Object.values(itemRates).reduce((a,b)=>a+b,0)/totalItems:0;
+  let doneItems=Object.values(itemRates).reduce((a,b)=>a+b,0);
+
+  document.getElementById('doneNum').textContent=doneItems.toFixed(1);
+  document.getElementById('todoNum').textContent=(totalItems-doneItems).toFixed(1);
+  document.getElementById('rateNum').textContent=Math.round(overallRate*100)+'%';
+
+  let cont=document.getElementById('content');
+  if(todayItems.length===0){
+    cont.innerHTML='<div class="empty-hint">当天无检查事项</div>';
+    return;
+  }
+
+  cont.innerHTML=todayItems.map(it=>{
+    let freq=it.freq||1;
+    let labels=it.freqLabels||null;
+
+    let itemChecks=allChecks.filter(c=>c.item.id===it.id);
+    let itemDone=itemChecks.filter(c=>state[c.key]).length;
+    let itemTotal=itemChecks.length;
+    let allDone=itemDone===itemTotal;
+    let anyDone=itemDone>0;
+
+    let checkRowsHtml='';
+    for(let fi=0;fi<freq;fi++){
+      let freqLabel=labels?labels[fi]:null;
+      let freqChecks=itemChecks.filter(c=>c.freqIdx===fi);
+      for(let c of freqChecks){
+        let ck=!!state[c.key];
+        let personLabel=c.person;
+        if(freqLabel) personLabel += ' · ' + freqLabel;
+        checkRowsHtml += '<div class="check-row'+(ck?' checked':'')+'" onclick="'+(isLocked?'':'handleCheck(\''+c.key+'\')')+'">'+
+          '<input type="checkbox" '+(ck?'checked':'')+' onclick="'+(isLocked?'event.preventDefault()':'event.stopPropagation();handleCheck(\''+c.key+'\')')+'">'+
+          '<span class="check-person">'+personLabel+'</span>'+
+          '<span class="check-status">✓</span>'+
+          '</div>';
+      }
+    }
+
+    return '<div class="item-card'+(isLocked?' locked':'')+'">'+
+      '<div class="item-header">'+
+        '<div class="item-dot" style="background:'+(allDone?'#059669':anyDone?'#f59e0b':'#d1d5db')+'"></div>'+
+        '<div class="item-name">'+it.name+'</div>'+
+        '<div class="item-stats">'+itemDone+'/'+itemTotal+'</div>'+
+      '</div>'+
+      (it.note?'<div class="item-note">'+it.note+'</div>':'')+
+      '<div class="check-rows">'+checkRowsHtml+'</div>'+
+      '</div>';
+  }).join('');
+}
+
+async function handleCheck(key){
+  if(!key)return;
+  await toggleCheck(key);
+  render();
+}
+
+async function init(){
+  await loadFromCloud();
+  render();
+}
+init();
+</script>
+</body>
+</html>
