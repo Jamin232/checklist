@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>诊断页面</title>
+<style>
+body{font-family:monospace;padding:20px;background:#1a1a2e;color:#e0e0e0}
+h2{color:#1a73e8;margin-top:20px}
+.ok{color:#0a8043}
+.fail{color:#e74c3c}
+pre{background:#16213e;padding:10px;border-radius:6px;overflow-x:auto;font-size:12px}
+</style>
+</head>
+<body>
+<h1>综合操作组 Checklist 诊断</h1>
+<div id="results">测试中...</div>
+
+<script>
+const SUPABASE_URL = 'https://epxnyyqaddvtdtkunccg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG55eXFhZGR2dGR0a3VuY2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzc1MDgsImV4cCI6MjA5NTk1MzUwOH0.HnTG2XlNFNd_WA6WJ8MSHsZKOJ6DfWvEoJq3UA0r2qQ';
+
+const TABLES = ['zh_manager','zh_chuku_a','zh_chuku_b','zh_danzheng_a','zh_danzheng_b','zh_ganghou_a','zh_ganghou_b','zh_waipai'];
+
+async function apiFetch(method,path,body){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    method,headers:{
+      'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,
+      'Content-Type':'application/json','Prefer':'return=representation,resolution=merge-duplicates'
+    },body:body?JSON.stringify(body):undefined
+  });
+  return r;
+}
+
+async function test() {
+  let html = '';
+  
+  for (const table of TABLES) {
+    html += `<h2>${table}</h2>`;
+    try {
+      const r = await apiFetch('GET', `/${table}?select=check_key,checked`);
+      html += `<p>Status: <span class="${r.ok?'ok':'fail'}">${r.status} ${r.statusText}</span></p>`;
+      const txt = await r.text();
+      html += `<p>Body length: ${txt.length}</p>`;
+      if (r.ok && txt) {
+        const data = JSON.parse(txt);
+        html += `<p>Records: ${data.length}</p>`;
+        if (data.length > 0) {
+          html += '<pre>' + data.slice(0,5).map(d => `${d.check_key} => ${d.checked}`).join('\n') + '</pre>';
+        }
+      } else {
+        html += `<p class="fail">Response not OK or empty!</p>`;
+      }
+    } catch(e) {
+      html += `<p class="fail">Error: ${e.message}</p>`;
+    }
+  }
+  
+  // 测试周 key 生成
+  html += '<h2>周 Key 测试</h2>';
+  const d=new Date();
+  const dow=d.getDay()||7;
+  const mon=new Date(d); mon.setDate(d.getDate()-dow+1);
+  const todayWk=`W${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+  html += `<p>Today: ${d.toISOString().split('T')[0]}, DayOfWeek: ${dow}</p>`;
+  html += `<p>This week Monday: ${mon.toISOString().split('T')[0]}</p>`;
+  html += `<p>Week key: ${todayWk}</p>`;
+  html += `<p>Today day index: ${dow}</p>`;
+  
+  // 测试 state 匹配
+  html += '<h2>State 匹配测试 (zh_manager)</h2>';
+  try {
+    const r = await apiFetch('GET', '/zh_manager?select=check_key,checked');
+    if (r.ok) {
+      const txt = await r.text();
+      const rows = JSON.parse(txt);
+      const state = {};
+      rows.forEach(rr => { state[rr.check_key] = rr.checked; });
+      
+      // 模拟生成 key 并匹配
+      const items = ['n1','n2','n3','n4','n5','n6','n7','j1','j2','j3','j4','j5','j6','j7','j8','j9'];
+      let matchCount = 0, missCount = 0;
+      for (const day of [1,2,3,4,5]) {
+        for (const id of items) {
+          const key = `${todayWk}_d${day}_${id}`;
+          if (key in state) {
+            matchCount++;
+          } else {
+            missCount++;
+          }
+        }
+      }
+      html += `<p>Week: ${todayWk}</p>`;
+      html += `<p>Keys in state: ${Object.keys(state).length}</p>`;
+      html += `<p>Expected keys (items × days): ${5*items.length}</p>`;
+      html += `<p>Matches: <span class="ok">${matchCount}</span></p>`;
+      html += `<p>Misses: <span class="fail">${missCount}</span></p>`;
+    }
+  } catch(e) {
+    html += `<p class="fail">Error: ${e.message}</p>`;
+  }
+  
+  document.getElementById('results').innerHTML = html;
+}
+
+test();
+</script>
+</body>
+</html>
