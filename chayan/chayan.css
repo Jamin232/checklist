@@ -117,3 +117,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
   .kpi-label{font-size:10px}
   .chart-container{height:280px}
 }
+
+/* 下钻 */
+.drilldown-bar{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#fff;flex-wrap:wrap}
+.drilldown-bar label{font-size:13px;font-weight:600;color:#333}
+.drilldown-bar select{padding:6px 10px;border:0.5px solid #ddd;border-radius:6px;font-size:13px;min-width:160px;background:#fff}
+.drilldown-hint{font-size:11px;color:#888;margin-left:4px}
+
+/* 热力图提示 */
+.heatmap-tip{font-size:11px;color:#888;padding:8px 14px;background:#f8f9fb;line-height:1.5}

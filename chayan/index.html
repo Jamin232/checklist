@@ -17,7 +17,7 @@
       <h1>查验率监控</h1>
       <span class="date-bar" id="headerDate"></span>
     </div>
-    <div class="sub-title">以发货日为基准 · 回溯归集 · 成熟期标记</div>
+    <div class="sub-title">以发货日为基准 · 全量数据 · 周环比追踪</div>
   </div>
 
   <!-- Tab 导航 -->
@@ -25,6 +25,7 @@
     <div class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">总览</div>
     <div class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</div>
     <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
+    <div class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</div>
     <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
   </div>
 
@@ -33,7 +34,7 @@
     <div class="upload-card">
       <div class="upload-icon">📊</div>
       <div class="upload-title">上传产品跟踪表</div>
-      <div class="upload-desc">请上传 <b>0715 产品跟踪表-合并.xlsx</b> 或最新跟踪表<br>支持拖拽或点击选择</div>
+      <div class="upload-desc">请上传 <b>产品跟踪表</b>（xlsx格式）<br>支持拖拽或点击选择</div>
       <div class="upload-zone" id="dropZone">
         <div>📁 点击或拖拽文件到此处</div>
         <div class="upload-hint">仅支持 .xlsx 格式</div>
@@ -157,11 +158,11 @@
 
       <div class="section">
         <div class="section-header">
-          <div class="section-title">📋 代理绩效对比 <span style="font-size:11px;color:#888;font-weight:400">本周 vs 上周 · 起运港即期查验率</span></div>
+          <div class="section-title">📋 代理绩效对比 <span style="font-size:11px;color:#888;font-weight:400">全量数据 · 起运港+目的港+综合 · 周变化</span></div>
         </div>
         <div class="table-wrap">
           <table class="data-table compare-table">
-            <thead><tr><th>代理</th><th>本周票数</th><th>本周起运港</th><th>本周综合</th><th>上周综合</th><th>变化</th><th>建议</th></tr></thead>
+            <thead><tr><th>代理</th><th>总票数</th><th>起运港</th><th>目的港</th><th>综合</th><th>周变化</th><th>建议</th></tr></thead>
             <tbody id="agentCompareBody"></tbody>
           </table>
         </div>
@@ -170,6 +171,10 @@
       <div class="section">
         <div class="section-header">
           <div class="section-title">🔥 代理 × 渠道热力图</div>
+        </div>
+        <div class="heatmap-tip">
+          💡 横轴=渠道大类，纵轴=代理，颜色越深=查验率越高。<br>
+          找出你的代理在哪些渠道上表现特别差（深红格），这些是你要规避的组合。
         </div>
         <div class="chart-container" id="agentChannelHeatmap" style="height:380px"></div>
       </div>
@@ -180,6 +185,34 @@
         </div>
         <div class="table-wrap">
           <table class="data-table" id="agentTable"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 渠道下钻 ===== -->
+    <div id="pane-drilldown" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🔍 渠道下钻 — 选择渠道大类看代理表现</div>
+        </div>
+        <div class="drilldown-bar">
+          <label>渠道大类：</label>
+          <select id="drilldownSelect" onchange="updateDrilldownTab()">
+            <option value="">— 请选择 —</option>
+          </select>
+          <span class="drilldown-hint">选择后显示该渠道下各代理的查验率与货量分配建议</span>
+        </div>
+      </div>
+      <div class="section" id="drilldownResult" style="display:none">
+        <div class="section-header">
+          <div class="section-title" id="drilldownTitle">代理表现</div>
+        </div>
+        <div class="chart-container" id="drilldownChart"></div>
+        <div class="table-wrap">
+          <table class="data-table compare-table">
+            <thead><tr><th>代理</th><th>票数</th><th>起运港</th><th>目的港</th><th>综合</th><th>票占比</th><th>建议</th></tr></thead>
+            <tbody id="drilldownTableBody"></tbody>
+          </table>
         </div>
       </div>
     </div>

@@ -497,6 +497,17 @@ async function loadAndProcess(file) {
     if (uploadPanel) uploadPanel.style.display = 'none';
     if (mainContent) mainContent.style.display = 'block';
 
+    // 填充下钻下拉选项
+    const ddSelect = document.getElementById('drilldownSelect');
+    if (ddSelect) {
+      ddSelect.innerHTML = '<option value="">— 请选择渠道大类 —</option>' +
+        Object.entries(aggByChannel)
+          .filter(([k, v]) => k && v.totalTickets >= 10)
+          .sort((a, b) => b[1].totalTickets - a[1].totalTickets)
+          .map(([k, v]) => `<option value="${k}">${k} (${v.totalTickets}票)</option>`)
+          .join('');
+    }
+
     // 更新 UI
     updateAllTabs();
     showLoading(false);
@@ -524,6 +535,7 @@ function updateAllTabs() {
   updateDashboardTab();
   updateChannelTab();
   updateAgentTab();
+  updateDrilldownTab();
   updateAlertTab();
 }
 
@@ -752,66 +764,81 @@ function updateAgentTab() {
   renderAgentDetailTable();
 }
 
-// 代理绩效对比表：最近两周环比 + 分配建议
+// 代理绩效对比表：全量数据 + 最近两周变化
 function buildAgentComparisonTable() {
   const tbody = document.getElementById('agentCompareBody');
   if (!tbody) return;
 
-  if (allWeekKeys.length < 2) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:16px">需要至少两周数据</td></tr>';
-    return;
-  }
-
-  const lastWk = allWeekKeys[allWeekKeys.length - 1];
-  const prevWk = allWeekKeys[allWeekKeys.length - 2];
-
   const rows = [];
-  for (const [agent, wm] of Object.entries(aggByAgentWeekly)) {
-    const cur = wm[lastWk];
-    const prev = wm[prevWk];
-    if (!cur || cur.totalTickets < 5) continue;
-    const curRate = cur.inspectedTickets / cur.totalTickets * 100;
-    const prevRate = prev && prev.totalTickets >= 5 ? prev.inspectedTickets / prev.totalTickets * 100 : null;
-    const delta = prevRate !== null ? (curRate - prevRate).toFixed(1) : null;
-    // 分配建议
+  for (const [agent, data] of Object.entries(aggByAgent)) {
+    if (!agent || data.totalTickets < 5) continue;
+
+    // 全量查验率
+    const overallRate = data.overallRate;
+    const domesticRate = data.domesticRate;
+    const foreignRate = data.foreignRate;
+    const totalTickets = data.totalTickets;
+
+    // 最近两周变化（综合查验率）
+    let delta = null;
+    if (allWeekKeys.length >= 2) {
+      const wm = aggByAgentWeekly[agent];
+      if (wm) {
+        // 找最近两周都有数据的
+        let lastWk = null, prevWk = null;
+        for (let i = allWeekKeys.length - 1; i >= 0; i--) {
+          const wk = allWeekKeys[i];
+          if (wm[wk] && wm[wk].totalTickets >= 5) {
+            if (!lastWk) lastWk = wk;
+            else if (!prevWk) { prevWk = wk; break; }
+          }
+        }
+        if (lastWk && prevWk) {
+          const lastR = wm[lastWk].inspectedTickets / wm[lastWk].totalTickets * 100;
+          const prevR = wm[prevWk].inspectedTickets / wm[prevWk].totalTickets * 100;
+          delta = lastR - prevR;
+        }
+      }
+    }
+
+    // 分配建议（基于全量综合查验率）
     let suggestion = '';
-    if (curRate > SETTINGS.highRisk) suggestion = '🚫 规避';
-    else if (curRate > SETTINGS.midRisk) suggestion = '⚠️ 减量';
-    else if (delta !== null && parseFloat(delta) < -1) suggestion = '✅ 可加量';
-    else if (curRate <= SETTINGS.midRisk) suggestion = '👌 正常';
-    else suggestion = '—';
+    if (overallRate > SETTINGS.highRisk) suggestion = '🚫 规避';
+    else if (overallRate > SETTINGS.midRisk) suggestion = '⚠️ 减量';
+    else if (delta !== null && delta < -1) suggestion = '✅ 可加量';
+    else suggestion = '👌 正常';
 
     rows.push({
       agent,
-      curTotal: cur.totalTickets,
-      curDomesticRate: cur.domesticTickets / cur.totalTickets * 100,
-      curRate,
-      prevRate,
+      totalTickets,
+      domesticRate,
+      foreignRate,
+      overallRate,
       delta,
       suggestion
     });
   }
 
-  // 排序：高查验率在前
-  rows.sort((a, b) => b.curRate - a.curRate);
+  // 排序：综合查验率从高到低（高风险在前）
+  rows.sort((a, b) => b.overallRate - a.overallRate);
 
   tbody.innerHTML = rows.map(r => {
     let deltaHtml = '';
     if (r.delta !== null) {
-      const d = parseFloat(r.delta);
-      if (d > 1) deltaHtml = `<span style="color:#d62929">↑${r.delta}%</span>`;
+      const d = r.delta;
+      if (d > 1) deltaHtml = `<span style="color:#d62929">↑${d.toFixed(1)}%</span>`;
       else if (d < -1) deltaHtml = `<span style="color:#07c160">↓${Math.abs(d).toFixed(1)}%</span>`;
-      else deltaHtml = `<span style="color:#999">→${r.delta}%</span>`;
+      else deltaHtml = `<span style="color:#999">→${d.toFixed(1)}%</span>`;
     } else {
-      deltaHtml = '<span style="color:#aaa">新</span>';
+      deltaHtml = '<span style="color:#aaa">—</span>';
     }
     const sugClass = r.suggestion.includes('规避') ? 'sug-avoid' : (r.suggestion.includes('减量') ? 'sug-warn' : (r.suggestion.includes('加量') ? 'sug-good' : ''));
     return `<tr>
       <td>${r.agent}</td>
-      <td>${r.curTotal}</td>
-      <td style="color:#d62929;font-weight:500">${r.curDomesticRate.toFixed(1)}%</td>
-      <td style="font-weight:600">${r.curRate.toFixed(1)}%</td>
-      <td>${r.prevRate !== null ? r.prevRate.toFixed(1)+'%' : '-'}</td>
+      <td>${r.totalTickets.toLocaleString()}</td>
+      <td style="color:#d62929;font-weight:500">${r.domesticRate.toFixed(1)}%</td>
+      <td style="color:#1764e8;font-weight:500">${r.foreignRate.toFixed(1)}%</td>
+      <td style="font-weight:600">${r.overallRate.toFixed(1)}%</td>
       <td>${deltaHtml}</td>
       <td class="${sugClass}">${r.suggestion}</td>
     </tr>`;
@@ -883,6 +910,97 @@ function buildAgentChannelHeatmap() {
     const chart = setChart('agentChannelHeatmap', echarts.init(chartDom));
     const option = createHeatmapOption('代理×渠道综合查验率', topChannels, topAgents, heatData);
     chart.setOption(option, true);
+  }
+}
+
+// 渠道下钻：选择渠道大类后，看该渠道下各代理的查验率与货量分配
+function updateDrilldownTab() {
+  const select = document.getElementById('drilldownSelect');
+  const resultDiv = document.getElementById('drilldownResult');
+  if (!select || !resultDiv) return;
+
+  const channel = select.value;
+  if (!channel) {
+    resultDiv.style.display = 'none';
+    return;
+  }
+
+  resultDiv.style.display = 'block';
+  const titleEl = document.getElementById('drilldownTitle');
+  if (titleEl) titleEl.textContent = `${channel} — 代理表现与分配建议`;
+
+  // 筛选该渠道下的记录
+  const subset = records.filter(r => r.channel === channel);
+  const totalInChannel = subset.reduce((s, r) => s + r.ticketCount, 0);
+
+  // 按代理聚合
+  const agentMap = {};
+  for (const r of subset) {
+    const a = r.agent || '(未登记)';
+    if (!agentMap[a]) agentMap[a] = { total: 0, domestic: 0, foreign: 0, inspected: 0 };
+    agentMap[a].total += r.ticketCount;
+    if (r.isDomestic) agentMap[a].domestic += r.ticketCount;
+    if (r.isForeign) agentMap[a].foreign += r.ticketCount;
+    if (r.isInspected) agentMap[a].inspected += r.ticketCount;
+  }
+
+  const rows = Object.entries(agentMap)
+    .filter(([k, v]) => v.total >= 5)
+    .map(([agent, v]) => {
+      const domRate = v.domestic / v.total * 100;
+      const foreignRate = v.foreign / v.total * 100;
+      const overallRate = v.inspected / v.total * 100;
+      const share = totalInChannel > 0 ? (v.total / totalInChannel * 100) : 0;
+
+      let suggestion = '';
+      if (overallRate > SETTINGS.highRisk) suggestion = '🚫 规避';
+      else if (overallRate > SETTINGS.midRisk) suggestion = '⚠️ 减量';
+      else if (domRate <= 1 && overallRate <= SETTINGS.midRisk) suggestion = '✅ 推荐';
+      else suggestion = '👌 正常';
+
+      return {
+        agent,
+        total: v.total,
+        domRate,
+        foreignRate,
+        overallRate,
+        share,
+        suggestion
+      };
+    })
+    .sort((a, b) => a.overallRate - b.overallRate); // 低查验率在前（推荐优先）
+
+  // 图表：代理查验率对比柱状图
+  const chartDom = document.getElementById('drilldownChart');
+  if (chartDom) {
+    const names = rows.map(r => r.agent);
+    const domData = rows.map(r => ({ value: r.domRate, count: r.total }));
+    const foreignData = rows.map(r => ({ value: r.foreignRate, count: r.total }));
+    const overallData = rows.map(r => ({ value: r.overallRate, count: r.total }));
+    const chart = setChart('drilldownChart', echarts.init(chartDom));
+    const option = createBarChartOption(`${channel} 代理查验率对比`, names, [
+      { name: '起运港', data: domData, color: COLORS.domestic },
+      { name: '目的港', data: foreignData, color: COLORS.foreign },
+      { name: '综合', data: overallData, color: COLORS.overall }
+    ]);
+    chart.setOption(option, true);
+  }
+
+  // 表格
+  const tbody = document.getElementById('drilldownTableBody');
+  if (tbody) {
+    tbody.innerHTML = rows.map(r => {
+      const sugClass = r.suggestion.includes('规避') ? 'sug-avoid' : (r.suggestion.includes('减量') ? 'sug-warn' : (r.suggestion.includes('推荐') ? 'sug-good' : ''));
+      return `<tr>
+        <td>${r.agent}</td>
+        <td>${r.total.toLocaleString()}</td>
+        <td style="color:#d62929;font-weight:500">${r.domRate.toFixed(1)}%</td>
+        <td style="color:#1764e8;font-weight:500">${r.foreignRate.toFixed(1)}%</td>
+        <td style="font-weight:600">${r.overallRate.toFixed(1)}%</td>
+        <td>${r.share.toFixed(1)}%</td>
+        <td class="${sugClass}">${r.suggestion}</td>
+      </tr>`;
+    }).join('');
   }
 }
 
@@ -1065,6 +1183,7 @@ function switchTab(tabName) {
   if (tabName === 'dashboard') updateDashboardTab();
   if (tabName === 'channel') updateChannelTab();
   if (tabName === 'agent') updateAgentTab();
+  if (tabName === 'drilldown') updateDrilldownTab();
   if (tabName === 'alert') {
     updateAlertTab();
     // 同时刷新明细表格
