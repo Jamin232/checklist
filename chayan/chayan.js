@@ -137,12 +137,24 @@ function readExcel(file) {
 function processData(rows) {
   const list = [];
   let maxD = null;
+  const seenSubTickets = new Set(); // 全局分出仓单号去重
 
   for (const row of rows) {
-    // B列 主出仓单号 -> 按换行分割票数
-    const ticketStr = safeStr(row['主出仓单号']);
-    const tickets = ticketStr.split(/\r?\n/).map(s => s.trim()).filter(s => s);
-    const ticketCount = tickets.length > 0 ? tickets.length : 1; // 空则计1票
+    // 分出仓单号 -> 按换行分割，全局去重，去重后计数为票数
+    const subTicketStr = safeStr(row['分出仓单号']);
+    const rawSubTickets = subTicketStr.split(/\r?\n/).map(s => s.trim()).filter(s => s);
+
+    // 过滤掉已出现过的（重复保留第一条）
+    const tickets = rawSubTickets.filter(t => !seenSubTickets.has(t));
+
+    // 如果该行所有分出仓单号都重复了，整行跳过
+    if (rawSubTickets.length > 0 && tickets.length === 0) continue;
+
+    // 票数 = 去重后的数量（空则兜底1票，不进入去重池）
+    const ticketCount = tickets.length > 0 ? tickets.length : 1;
+
+    // 将新的分出仓单号加入全局去重
+    tickets.forEach(t => seenSubTickets.add(t));
 
     // Q列 状态备注 -> 查验判定（金标准）
     const remark = safeStr(row['状态备注']);
@@ -425,11 +437,15 @@ function createLineChartOption(title, timeKeys, seriesData) {
       name: s.name,
       type: 'line',
       data: s.data,
-      smooth: true,
+      smooth: false,
       lineStyle: { width: 2 },
       symbol: 'circle',
-      symbolSize: 4
-    }))
+      symbolSize: 0,
+      emphasis: { symbolSize: 6 },
+      hoverAnimation: false,
+      animation: false
+    })),
+    animation: false
   };
 }
 
@@ -662,7 +678,7 @@ function updateChannelTrendChart() {
   option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
 
   const chart = setChart('channelTrendChart', chartDom);
-  chart.setOption(option, true);
+  chart.setOption(option, false);
 }
 
 // 渲染渠道选择器标签
@@ -675,7 +691,7 @@ function renderChannelSelector() {
     .map(([k]) => k);
   container.innerHTML = allChannels.map(ch => {
     const isSelected = selectedChannels.includes(ch);
-    return `<span class="channel-tag ${isSelected ? 'active' : ''}" onclick="toggleChannel('${ch}')">${ch}</span>`;
+    return `<span class="channel-tag ${isSelected ? 'active' : ''}" data-channel="${ch}" onclick="toggleChannel('${ch}')">${ch}</span>`;
   }).join('');
 }
 
@@ -686,7 +702,9 @@ function toggleChannel(channel) {
   } else {
     selectedChannels.push(channel);
   }
-  renderChannelSelector();
+  // 只切换对应标签的 class，不重建全部 DOM
+  const tagEl = document.querySelector(`.channel-tag[data-channel="${CSS.escape(channel)}"]`);
+  if (tagEl) tagEl.classList.toggle('active', selectedChannels.includes(channel));
   updateChannelTrendChart();
 }
 
