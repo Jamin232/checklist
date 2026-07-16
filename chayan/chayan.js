@@ -933,7 +933,7 @@ function updateDrilldownTab() {
   const subset = records.filter(r => r.channel === channel);
   const totalInChannel = subset.reduce((s, r) => s + r.ticketCount, 0);
 
-  // 按代理聚合
+  // 按代理聚合（全量）
   const agentMap = {};
   for (const r of subset) {
     const a = r.agent || '(未登记)';
@@ -944,6 +944,20 @@ function updateDrilldownTab() {
     if (r.isInspected) agentMap[a].inspected += r.ticketCount;
   }
 
+  // 按代理+周聚合（起运港）——用于周趋势和变化
+  const weeklyAgentMap = {}; // {weekKey: {agent: {total, domestic}}}
+  for (const r of subset) {
+    if (!r.shipDate) continue;
+    const wk = getWeekKey(r.shipDate);
+    if (!wk) continue;
+    const a = r.agent || '(未登记)';
+    if (!weeklyAgentMap[wk]) weeklyAgentMap[wk] = {};
+    if (!weeklyAgentMap[wk][a]) weeklyAgentMap[wk][a] = { total: 0, domestic: 0 };
+    weeklyAgentMap[wk][a].total += r.ticketCount;
+    if (r.isDomestic) weeklyAgentMap[wk][a].domestic += r.ticketCount;
+  }
+  const sortedWeeks = Object.keys(weeklyAgentMap).sort();
+
   const rows = Object.entries(agentMap)
     .filter(([k, v]) => v.total >= 5)
     .map(([agent, v]) => {
@@ -951,6 +965,25 @@ function updateDrilldownTab() {
       const foreignRate = v.foreign / v.total * 100;
       const overallRate = v.inspected / v.total * 100;
       const share = totalInChannel > 0 ? (v.total / totalInChannel * 100) : 0;
+
+      // 最近两周起运港变化
+      let domDelta = null;
+      if (sortedWeeks.length >= 2) {
+        let lastWk = null, prevWk = null;
+        for (let i = sortedWeeks.length - 1; i >= 0; i--) {
+          const wk = sortedWeeks[i];
+          const d = weeklyAgentMap[wk][agent];
+          if (d && d.total >= 5) {
+            if (!lastWk) lastWk = wk;
+            else if (!prevWk) { prevWk = wk; break; }
+          }
+        }
+        if (lastWk && prevWk) {
+          const lastR = weeklyAgentMap[lastWk][agent].domestic / weeklyAgentMap[lastWk][agent].total * 100;
+          const prevR = weeklyAgentMap[prevWk][agent].domestic / weeklyAgentMap[prevWk][agent].total * 100;
+          domDelta = lastR - prevR;
+        }
+      }
 
       let suggestion = '';
       if (overallRate > SETTINGS.highRisk) suggestion = '🚫 规避';
@@ -965,12 +998,13 @@ function updateDrilldownTab() {
         foreignRate,
         overallRate,
         share,
+        domDelta,
         suggestion
       };
     })
     .sort((a, b) => a.overallRate - b.overallRate); // 低查验率在前（推荐优先）
 
-  // 图表：代理查验率对比柱状图
+  // 图表1：代理查验率对比柱状图
   const chartDom = document.getElementById('drilldownChart');
   if (chartDom) {
     const names = rows.map(r => r.agent);
@@ -986,11 +1020,41 @@ function updateDrilldownTab() {
     chart.setOption(option, true);
   }
 
+  // 图表2：代理起运港查验率周趋势（Top6 按票数）
+  const trendDom = document.getElementById('drilldownTrendChart');
+  if (trendDom && sortedWeeks.length >= 2) {
+    const topAgents = [...rows].sort((a, b) => b.total - a.total).slice(0, 6).map(r => r.agent);
+    const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899'];
+    const series = topAgents.map((agent, idx) => {
+      const data = sortedWeeks.map(wk => {
+        const d = weeklyAgentMap[wk] && weeklyAgentMap[wk][agent];
+        if (!d || d.total === 0) return null;
+        return parseFloat((d.domestic / d.total * 100).toFixed(1));
+      });
+      return { name: agent, data, lineStyle: { width: 2 }, itemStyle: { color: palette[idx % palette.length] } };
+    });
+    const chart = setChart('drilldownTrendChart', echarts.init(trendDom));
+    const option = createLineChartOption('代理起运港查验率周趋势（Top6）', sortedWeeks, series);
+    option.color = palette.slice(0, series.length);
+    option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
+    option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
+    chart.setOption(option, true);
+  }
+
   // 表格
   const tbody = document.getElementById('drilldownTableBody');
   if (tbody) {
     tbody.innerHTML = rows.map(r => {
       const sugClass = r.suggestion.includes('规避') ? 'sug-avoid' : (r.suggestion.includes('减量') ? 'sug-warn' : (r.suggestion.includes('推荐') ? 'sug-good' : ''));
+      let deltaHtml = '';
+      if (r.domDelta !== null) {
+        const d = r.domDelta;
+        if (d > 1) deltaHtml = `<span style="color:#d62929">↑${d.toFixed(1)}%</span>`;
+        else if (d < -1) deltaHtml = `<span style="color:#07c160">↓${Math.abs(d).toFixed(1)}%</span>`;
+        else deltaHtml = `<span style="color:#999">→${d.toFixed(1)}%</span>`;
+      } else {
+        deltaHtml = '<span style="color:#aaa">—</span>';
+      }
       return `<tr>
         <td>${r.agent}</td>
         <td>${r.total.toLocaleString()}</td>
@@ -998,6 +1062,7 @@ function updateDrilldownTab() {
         <td style="color:#1764e8;font-weight:500">${r.foreignRate.toFixed(1)}%</td>
         <td style="font-weight:600">${r.overallRate.toFixed(1)}%</td>
         <td>${r.share.toFixed(1)}%</td>
+        <td>${deltaHtml}</td>
         <td class="${sugClass}">${r.suggestion}</td>
       </tr>`;
     }).join('');
