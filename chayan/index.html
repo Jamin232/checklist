@@ -42,7 +42,7 @@
       <div class="upload-note">
         <b>统计口径：</b>以发货日(T列)为基准，票数按B列主出仓单号换行分割。<br>
         查验判定以Q列状态备注为金标准（含"国内查验"/"国外查验"）。<br>
-        最近30天数据标记为<span class="tag-mature">未成熟</span>（目的港查验滞后）。
+        起运港查验反映即时风险，目的港查验作为总体参考（存在滞后）。
       </div>
     </div>
   </div>
@@ -72,6 +72,18 @@
         </div>
       </div>
 
+      <!-- 本周 KPI -->
+      <div class="kpi-row kpi-row-week">
+        <div class="kpi-card kpi-week">
+          <div class="kpi-num" id="kpiWeekRate">--</div>
+          <div class="kpi-label">本周综合查验率</div>
+        </div>
+        <div class="kpi-card kpi-week">
+          <div class="kpi-num" id="kpiWeekTotal">--</div>
+          <div class="kpi-label">本周发货票数</div>
+        </div>
+      </div>
+
       <!-- 粒度切换 -->
       <div class="granularity-bar">
         <span class="granularity-btn active" data-granularity="week">周度</span>
@@ -81,10 +93,17 @@
       <!-- 趋势图 -->
       <div class="section">
         <div class="section-header">
-          <div class="section-title">📈 查验率趋势</div>
-          <span class="section-note">最近30天标记为未成熟</span>
+          <div class="section-title">📈 总体查验率趋势</div>
         </div>
         <div class="chart-container" id="trendChart"></div>
+      </div>
+
+      <!-- 渠道趋势图 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🏭 渠道查验率周趋势（Top6）</div>
+        </div>
+        <div class="chart-container" id="channelTrendChart"></div>
       </div>
     </div>
 
@@ -106,6 +125,19 @@
 
       <div class="section">
         <div class="section-header">
+          <div class="section-title">📊 渠道大类周期对比（本周 vs 上周）</div>
+          <span class="section-note">起运港即期查验率</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table compare-table">
+            <thead><tr><th>渠道大类</th><th>本周票数</th><th>本周综合</th><th>上周综合</th><th>变化</th></tr></thead>
+            <tbody id="channelCompareBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
           <div class="section-title">📋 素芸物流渠道明细</div>
         </div>
         <div class="table-wrap">
@@ -121,6 +153,18 @@
           <div class="section-title">🏢 代理查验率 Top20</div>
         </div>
         <div class="chart-container" id="agentChart"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📋 代理绩效对比 <span style="font-size:11px;color:#888;font-weight:400">本周 vs 上周 · 起运港即期查验率</span></div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table compare-table">
+            <thead><tr><th>代理</th><th>本周票数</th><th>本周起运港</th><th>本周综合</th><th>上周综合</th><th>变化</th><th>建议</th></tr></thead>
+            <tbody id="agentCompareBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="section">
@@ -157,7 +201,7 @@
       <div class="section">
         <div class="section-header">
           <div class="section-title">🚨 风险预警列表</div>
-          <span class="section-note">仅基于成熟数据</span>
+          <span class="section-note">基于全量数据 + 周环比</span>
         </div>
         <div class="table-wrap">
           <table class="data-table alert-table">

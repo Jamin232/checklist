@@ -13,8 +13,7 @@ const COUNTRY_MAP = {
 const SETTINGS = {
   highRisk: 5.0,   // 综合查验率 >5% 为高风险
   midRisk: 3.0,    // 综合查验率 3%~5% 为中风险
-  matureDays: 30,  // 成熟期窗口 30 天
-  minSample: 20    // 统计最小样本数（低于此样本不预警）
+  minSample: 10    // 统计最小样本数（低于此样本不预警）
 };
 
 // 中文颜色配置（涨红跌绿）
@@ -43,6 +42,9 @@ let aggByUsSub = {};    // 美国子渠道聚合
 let aggByCustomer = {}; // 客户聚合
 let aggByProduct = {};  // 产品属性聚合
 let aggByLogistic = {}; // 素芸物流渠道聚合
+let aggByAgentWeekly = {};  // 代理周度拆解 {agent: {weekKey: {total, inspected, domestic}}}
+let aggByChannelWeekly = {}; // 渠道周度拆解 {channel: {weekKey: {total, inspected, domestic}}}
+let allWeekKeys = [];    // 所有周Key（排序后）
 
 // ===================== 工具函数 =====================
 
@@ -90,15 +92,6 @@ function getWeekKey(d) {
   const dayOfYear = Math.floor((mon - new Date(y, 0, 1)) / 86400000) + 1;
   const w = Math.ceil(dayOfYear / 7);
   return `${y}-W${String(w).padStart(2,'0')}`;
-}
-
-function isMature(date, maxDate, days) {
-  if (!date || !maxDate) return false;
-  const d = date instanceof Date ? date : parseDate(date);
-  const m = maxDate instanceof Date ? maxDate : parseDate(maxDate);
-  if (!d || !m) return false;
-  const diff = (m - d) / (1000 * 60 * 60 * 24);
-  return diff >= days;
 }
 
 function safeStr(val) {
@@ -263,11 +256,10 @@ function finalizeAgg(agg) {
 
 function aggregateBy(records, getKey, opts = {}) {
   const map = {};
-  const { filterMature = false, timeGranularity = null } = opts;
+  const { timeGranularity = null } = opts;
 
   for (const rec of records) {
     if (!rec.shipDate) continue;
-    if (filterMature && !isMature(rec.shipDate, maxShipDate, SETTINGS.matureDays)) continue;
 
     const key = getKey(rec);
     if (!key) continue;
@@ -277,10 +269,11 @@ function aggregateBy(records, getKey, opts = {}) {
     if (timeGranularity) {
       const tKey = timeGranularity === 'week' ? getWeekKey(rec.shipDate) : formatDateYM(rec.shipDate);
       if (!map[key].timeSeries[tKey]) {
-        map[key].timeSeries[tKey] = { totalTickets: 0, inspectedTickets: 0 };
+        map[key].timeSeries[tKey] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0 };
       }
       map[key].timeSeries[tKey].totalTickets += rec.ticketCount;
       if (rec.isInspected) map[key].timeSeries[tKey].inspectedTickets += rec.ticketCount;
+      if (rec.isDomestic) map[key].timeSeries[tKey].domesticTickets += rec.ticketCount;
     }
   }
 
@@ -308,14 +301,42 @@ function aggregateByTime(records, granularity) {
   return result;
 }
 
+// 按实体(代理/渠道)×周 拆解，返回 {entityKey: {weekKey: {total, inspected, domestic}}}
+function aggregateWeeklyByEntity(records, entityField) {
+  const map = {};
+  for (const rec of records) {
+    if (!rec.shipDate) continue;
+    const entityKey = rec[entityField];
+    if (!entityKey) continue;
+    const wk = getWeekKey(rec.shipDate);
+    if (!wk) continue;
+    if (!map[entityKey]) map[entityKey] = {};
+    if (!map[entityKey][wk]) map[entityKey][wk] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0 };
+    map[entityKey][wk].totalTickets += rec.ticketCount;
+    if (rec.isInspected) map[entityKey][wk].inspectedTickets += rec.ticketCount;
+    if (rec.isDomestic) map[entityKey][wk].domesticTickets += rec.ticketCount;
+  }
+  return map;
+}
+
+// 获取指定实体的最近N周查验率序列
+function getEntityRateSeries(entityWeekly, entityKey, weekKeys, rateType) {
+  const wm = entityWeekly[entityKey];
+  return weekKeys.map(wk => {
+    const d = wm && wm[wk];
+    if (!d || d.totalTickets === 0) return null;
+    const key = rateType === 'domestic' ? 'domesticTickets' : 'inspectedTickets';
+    return parseFloat((d[key] / d.totalTickets * 100).toFixed(1));
+  });
+}
+
 // ===================== 预警规则 =====================
 
 function generateAlerts() {
   const alerts = [];
 
-  // 代理预警（基于成熟数据）
-  const matureAgents = aggregateBy(records, r => r.agent, { filterMature: true });
-  for (const [agent, data] of Object.entries(matureAgents)) {
+  // 代理预警（全量数据）
+  for (const [agent, data] of Object.entries(aggByAgent)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
     if (data.overallRate > SETTINGS.highRisk) {
       alerts.push({ type: 'high', category: '代理', name: agent, rate: data.overallRate, total: data.totalTickets });
@@ -325,8 +346,7 @@ function generateAlerts() {
   }
 
   // 渠道大类预警
-  const matureChannels = aggregateBy(records, r => r.channel, { filterMature: true });
-  for (const [channel, data] of Object.entries(matureChannels)) {
+  for (const [channel, data] of Object.entries(aggByChannel)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
     if (data.overallRate > SETTINGS.highRisk) {
       alerts.push({ type: 'high', category: '渠道大类', name: channel, rate: data.overallRate, total: data.totalTickets });
@@ -336,8 +356,7 @@ function generateAlerts() {
   }
 
   // 素芸渠道预警
-  const matureLogistics = aggregateBy(records, r => r.logisticChannel, { filterMature: true });
-  for (const [channel, data] of Object.entries(matureLogistics)) {
+  for (const [channel, data] of Object.entries(aggByLogistic)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
     if (data.overallRate > SETTINGS.highRisk) {
       alerts.push({ type: 'high', category: '素芸渠道', name: channel, rate: data.overallRate, total: data.totalTickets });
@@ -346,27 +365,38 @@ function generateAlerts() {
     }
   }
 
-  // 趋势恶化（环比）- 基于时间聚合的成熟数据
-  // 按周计算
-  const weeklyAgg = aggregateByTime(records.filter(r => isMature(r.shipDate, maxShipDate, SETTINGS.matureDays)), 'week');
-  const weeks = Object.keys(weeklyAgg).sort();
-  if (weeks.length >= 2) {
-    const last = weeklyAgg[weeks[weeks.length - 1]];
-    const prev = weeklyAgg[weeks[weeks.length - 2]];
-    if (prev.overallRate > 0 && last.overallRate > 0) {
-      const change = ((last.overallRate - prev.overallRate) / prev.overallRate * 100);
-      if (change > 50) {
-        alerts.push({ type: 'trend', category: '总体', name: '综合查验率周环比', rate: last.overallRate, change: change.toFixed(1), prevRate: prev.overallRate });
+  // 代理周环比恶化预警（最近两周对比）
+  if (allWeekKeys.length >= 2) {
+    const lastWk = allWeekKeys[allWeekKeys.length - 1];
+    const prevWk = allWeekKeys[allWeekKeys.length - 2];
+    for (const [agent, wm] of Object.entries(aggByAgentWeekly)) {
+      const cur = wm[lastWk];
+      const prev = wm[prevWk];
+      if (!cur || !prev || cur.totalTickets < 5 || prev.totalTickets < 5) continue;
+      const curRate = cur.inspectedTickets / cur.totalTickets * 100;
+      const prevRate = prev.inspectedTickets / prev.totalTickets * 100;
+      if (curRate > SETTINGS.midRisk && curRate > prevRate * 1.5) {
+        alerts.push({ type: 'trend', category: '代理恶化', name: agent, rate: curRate, total: cur.totalTickets, change: ((curRate - prevRate) / Math.max(prevRate, 0.1) * 100).toFixed(0) + '%' });
+      }
+    }
+    // 渠道环比恶化
+    for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
+      const cur = wm[lastWk];
+      const prev = wm[prevWk];
+      if (!cur || !prev || cur.totalTickets < 5 || prev.totalTickets < 5) continue;
+      const curRate = cur.inspectedTickets / cur.totalTickets * 100;
+      const prevRate = prev.inspectedTickets / prev.totalTickets * 100;
+      if (curRate > SETTINGS.midRisk && curRate > prevRate * 1.5) {
+        alerts.push({ type: 'trend', category: '渠道恶化', name: ch, rate: curRate, total: cur.totalTickets, change: ((curRate - prevRate) / Math.max(prevRate, 0.1) * 100).toFixed(0) + '%' });
       }
     }
   }
 
-  // 排序：高风险在前，然后中风险，然后趋势
+  // 排序：高风险在前，中风险，趋势
   alerts.sort((a, b) => {
     const order = { high: 0, trend: 1, mid: 2 };
     return order[a.type] - order[b.type];
   });
-
   return alerts;
 }
 
@@ -446,12 +476,20 @@ async function loadAndProcess(file) {
 
     // 全量聚合
     aggByTime = { week: aggregateByTime(records, 'week'), month: aggregateByTime(records, 'month') };
-    aggByChannel = aggregateBy(records, r => r.channel);
-    aggByAgent = aggregateBy(records, r => r.agent);
+    aggByChannel = aggregateBy(records, r => r.channel, { timeGranularity: 'week' });
+    aggByAgent = aggregateBy(records, r => r.agent, { timeGranularity: 'week' });
     aggByUsSub = aggregateBy(records, r => r.usSubChannel);
     aggByLogistic = aggregateBy(records, r => r.logisticChannel);
     aggByCustomer = aggregateBy(records, r => r.customer);
     aggByProduct = aggregateBy(records, r => r.productAttr);
+
+    // 周度拆解（用于环比对比）
+    aggByAgentWeekly = aggregateWeeklyByEntity(records, 'agent');
+    aggByChannelWeekly = aggregateWeeklyByEntity(records, 'channel');
+    // 收集所有周Key
+    const weekSet = new Set();
+    Object.values(aggByAgentWeekly).forEach(wm => Object.keys(wm).forEach(k => weekSet.add(k)));
+    allWeekKeys = [...weekSet].sort();
 
     // 隐藏上传面板，显示主内容
     const uploadPanel = document.getElementById('uploadPanel');
@@ -511,33 +549,68 @@ function updateDashboardTab() {
   document.getElementById('kpiForeign').textContent = (total > 0 ? (foreign / total * 100).toFixed(2) : '0.00') + '%';
   document.getElementById('kpiOverall').textContent = (total > 0 ? (inspected / total * 100).toFixed(2) : '0.00') + '%';
 
-  // 趋势图
+  // KPI: 最近一周
+  if (allWeekKeys.length > 0) {
+    const lastWk = allWeekKeys[allWeekKeys.length - 1];
+    const timeData = aggByTime['week'];
+    if (timeData[lastWk]) {
+      document.getElementById('kpiWeekRate').textContent = timeData[lastWk].overallRate.toFixed(1) + '%';
+      document.getElementById('kpiWeekTotal').textContent = timeData[lastWk].totalTickets.toLocaleString();
+    }
+  }
+
+  // 趋势图（总体）
   const timeData = aggByTime[currentGranularity];
   const keys = Object.keys(timeData).sort();
   const domesticData = keys.map(k => timeData[k].domesticRate);
   const foreignData = keys.map(k => timeData[k].foreignRate);
   const overallData = keys.map(k => timeData[k].overallRate);
 
-  // 成熟度标记（最后N个标记为虚线）
-  const matureThreshold = SETTINGS.matureDays;
-  const matureKeys = keys.map(k => {
-    // 简单判断：最近2个周期标记为未成熟（基于周/月粒度）
-    return true; // 简化，实际按日期判断
+  const chartDom = document.getElementById('trendChart');
+  if (chartDom) {
+    const chart = setChart('trendChart', echarts.init(chartDom));
+    const option = createLineChartOption(
+      `总体查验率趋势 (${currentGranularity === 'week' ? '周度' : '月度'})`,
+      keys,
+      [
+        { name: '起运港查验率', data: domesticData },
+        { name: '目的港查验率', data: foreignData },
+        { name: '综合查验率', data: overallData }
+      ]
+    );
+    option.color = [COLORS.domestic, COLORS.foreign, COLORS.overall];
+    chart.setOption(option, true);
+  }
+
+  // 渠道趋势：Top 6 渠道的周度查验率对比线图
+  updateChannelTrendChart();
+}
+
+// 渠道趋势线图
+function updateChannelTrendChart() {
+  if (allWeekKeys.length < 2) return;
+  const chartDom = document.getElementById('channelTrendChart');
+  if (!chartDom) return;
+
+  // 取综合查验率 Top 6 渠道（至少有最近一周数据）
+  const ranked = Object.entries(aggByChannel)
+    .filter(([k, v]) => k && v.totalTickets >= 20)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .slice(0, 6);
+
+  const series = ranked.map(([name, v], idx) => {
+    const data = getEntityRateSeries(aggByChannelWeekly, name, allWeekKeys, 'combined');
+    return { name, data, lineStyle: { width: 2 } };
   });
 
-  const chartDom = document.getElementById('trendChart');
-  if (!chartDom) return;
-  const chart = setChart('trendChart', echarts.init(chartDom));
-  const option = createLineChartOption(
-    `查验率趋势 (${currentGranularity === 'week' ? '周度' : '月度'})`,
-    keys,
-    [
-      { name: '起运港查验率', data: domesticData },
-      { name: '目的港查验率', data: foreignData },
-      { name: '综合查验率', data: overallData }
-    ]
-  );
-  option.color = [COLORS.domestic, COLORS.foreign, COLORS.overall];
+  const option = createLineChartOption('渠道查验率周趋势', allWeekKeys, series);
+  // 给每条线不同颜色
+  const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899'];
+  option.color = palette.slice(0, series.length);
+  option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
+  option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
+
+  const chart = setChart('channelTrendChart', echarts.init(chartDom));
   chart.setOption(option, true);
 }
 
@@ -598,6 +671,53 @@ function updateChannelTab() {
     })),
     ['渠道名', '票数', '起运港', '目的港', '综合', '平均时效']
   );
+
+  // 渠道大类周期对比表
+  buildChannelComparisonTable();
+}
+
+// 渠道周期对比表
+function buildChannelComparisonTable() {
+  const tbody = document.getElementById('channelCompareBody');
+  if (!tbody) return;
+
+  if (allWeekKeys.length < 2) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:16px">需要至少两周数据</td></tr>';
+    return;
+  }
+
+  const lastWk = allWeekKeys[allWeekKeys.length - 1];
+  const prevWk = allWeekKeys[allWeekKeys.length - 2];
+
+  const rows = [];
+  for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
+    const cur = wm[lastWk];
+    const prev = wm[prevWk];
+    if (!cur || cur.totalTickets < 10) continue;
+    const curRate = cur.inspectedTickets / cur.totalTickets * 100;
+    const prevRate = prev && prev.totalTickets >= 5 ? prev.inspectedTickets / prev.totalTickets * 100 : null;
+    const delta = prevRate !== null ? (curRate - prevRate).toFixed(1) : null;
+
+    rows.push({ channel: ch, curTotal: cur.totalTickets, curRate, prevRate, delta });
+  }
+
+  rows.sort((a, b) => b.curRate - a.curRate);
+
+  tbody.innerHTML = rows.map(r => {
+    let deltaHtml = '';
+    if (r.delta !== null) {
+      const d = parseFloat(r.delta);
+      if (d > 1) deltaHtml = `<span style="color:#d62929">↑${r.delta}%</span>`;
+      else if (d < -1) deltaHtml = `<span style="color:#07c160">↓${Math.abs(d).toFixed(1)}%</span>`;
+      else deltaHtml = `<span style="color:#999">→${r.delta}%</span>`;
+    } else { deltaHtml = '<span style="color:#aaa">新</span>'; }
+    return `<tr>
+      <td>${r.channel}</td><td>${r.curTotal}</td>
+      <td style="font-weight:600">${r.curRate.toFixed(1)}%</td>
+      <td>${r.prevRate !== null ? r.prevRate.toFixed(1)+'%' : '-'}</td>
+      <td>${deltaHtml}</td>
+    </tr>`;
+  }).join('');
 }
 
 // 代理分析
@@ -622,23 +742,116 @@ function updateAgentTab() {
     chart.setOption(option, true);
   }
 
-  // 代理表格
-  renderTable('agentTable', Object.entries(aggByAgent)
-    .filter(([k, v]) => k && v.totalTickets >= 5)
-    .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .map(([k, v]) => ({
-      name: k,
-      total: v.totalTickets,
-      domestic: v.domesticRate.toFixed(2) + '%',
-      foreign: v.foreignRate.toFixed(2) + '%',
-      overall: v.overallRate.toFixed(2) + '%',
-      avgTime: v.avgInspectTime > 0 ? v.avgInspectTime.toFixed(1) + '天' : '-'
-    })),
-    ['代理名', '票数', '起运港', '目的港', '综合', '平均时效']
-  );
+  // 代理绩效对比表（最近两周环比）
+  buildAgentComparisonTable();
 
   // 代理 × 渠道热力图
   buildAgentChannelHeatmap();
+
+  // 代理明细表（带周趋势指示）
+  renderAgentDetailTable();
+}
+
+// 代理绩效对比表：最近两周环比 + 分配建议
+function buildAgentComparisonTable() {
+  const tbody = document.getElementById('agentCompareBody');
+  if (!tbody) return;
+
+  if (allWeekKeys.length < 2) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:16px">需要至少两周数据</td></tr>';
+    return;
+  }
+
+  const lastWk = allWeekKeys[allWeekKeys.length - 1];
+  const prevWk = allWeekKeys[allWeekKeys.length - 2];
+
+  const rows = [];
+  for (const [agent, wm] of Object.entries(aggByAgentWeekly)) {
+    const cur = wm[lastWk];
+    const prev = wm[prevWk];
+    if (!cur || cur.totalTickets < 5) continue;
+    const curRate = cur.inspectedTickets / cur.totalTickets * 100;
+    const prevRate = prev && prev.totalTickets >= 5 ? prev.inspectedTickets / prev.totalTickets * 100 : null;
+    const delta = prevRate !== null ? (curRate - prevRate).toFixed(1) : null;
+    // 分配建议
+    let suggestion = '';
+    if (curRate > SETTINGS.highRisk) suggestion = '🚫 规避';
+    else if (curRate > SETTINGS.midRisk) suggestion = '⚠️ 减量';
+    else if (delta !== null && parseFloat(delta) < -1) suggestion = '✅ 可加量';
+    else if (curRate <= SETTINGS.midRisk) suggestion = '👌 正常';
+    else suggestion = '—';
+
+    rows.push({
+      agent,
+      curTotal: cur.totalTickets,
+      curDomesticRate: cur.domesticTickets / cur.totalTickets * 100,
+      curRate,
+      prevRate,
+      delta,
+      suggestion
+    });
+  }
+
+  // 排序：高查验率在前
+  rows.sort((a, b) => b.curRate - a.curRate);
+
+  tbody.innerHTML = rows.map(r => {
+    let deltaHtml = '';
+    if (r.delta !== null) {
+      const d = parseFloat(r.delta);
+      if (d > 1) deltaHtml = `<span style="color:#d62929">↑${r.delta}%</span>`;
+      else if (d < -1) deltaHtml = `<span style="color:#07c160">↓${Math.abs(d).toFixed(1)}%</span>`;
+      else deltaHtml = `<span style="color:#999">→${r.delta}%</span>`;
+    } else {
+      deltaHtml = '<span style="color:#aaa">新</span>';
+    }
+    const sugClass = r.suggestion.includes('规避') ? 'sug-avoid' : (r.suggestion.includes('减量') ? 'sug-warn' : (r.suggestion.includes('加量') ? 'sug-good' : ''));
+    return `<tr>
+      <td>${r.agent}</td>
+      <td>${r.curTotal}</td>
+      <td style="color:#d62929;font-weight:500">${r.curDomesticRate.toFixed(1)}%</td>
+      <td style="font-weight:600">${r.curRate.toFixed(1)}%</td>
+      <td>${r.prevRate !== null ? r.prevRate.toFixed(1)+'%' : '-'}</td>
+      <td>${deltaHtml}</td>
+      <td class="${sugClass}">${r.suggestion}</td>
+    </tr>`;
+  }).join('');
+}
+
+// 代理明细表
+function renderAgentDetailTable() {
+  const rows = [];
+  for (const [agent, data] of Object.entries(aggByAgent)) {
+    if (!agent || data.totalTickets < 5) continue;
+    // 计算最近一周趋势
+    let trend = '';
+    if (allWeekKeys.length >= 2) {
+      const wm = aggByAgentWeekly[agent];
+      if (wm) {
+        const last = wm[allWeekKeys[allWeekKeys.length - 1]];
+        const prev = wm[allWeekKeys[allWeekKeys.length - 2]];
+        if (last && prev && last.totalTickets >= 3 && prev.totalTickets >= 3) {
+          const curR = last.inspectedTickets / last.totalTickets * 100;
+          const prevR = prev.inspectedTickets / prev.totalTickets * 100;
+          const d = curR - prevR;
+          if (d > 2) trend = '↑ 恶化';
+          else if (d < -2) trend = '↓ 改善';
+          else trend = '→ 持平';
+        }
+      }
+    }
+    rows.push({
+      name: agent,
+      total: data.totalTickets,
+      domestic: data.domesticRate.toFixed(1) + '%',
+      foreign: data.foreignRate.toFixed(1) + '%',
+      overall: data.overallRate.toFixed(1) + '%',
+      trend: trend || '—',
+      avgTime: data.avgInspectTime > 0 ? data.avgInspectTime.toFixed(1) + '天' : '-'
+    });
+  }
+  rows.sort((a, b) => parseFloat(b.overall) - parseFloat(a.overall));
+  renderTableCustom('agentTable', rows, ['代理名', '票数', '起运港', '目的港', '综合', '周趋势', '平均时效'], ['name', 'total', 'domestic', 'foreign', 'overall', 'trend', 'avgTime']);
 }
 
 function buildAgentChannelHeatmap() {
@@ -690,7 +903,7 @@ function updateAlertTab() {
         <td>${a.category}</td>
         <td>${a.name}</td>
         <td>${a.rate.toFixed(2)}%</td>
-        <td>${a.total || a.change || ''}</td>
+        <td>${a.total ? a.total.toLocaleString() + '票' : (a.change || '')}</td>
       </tr>`;
     }).join('');
   }
@@ -737,6 +950,21 @@ function renderTable(tableId, rows, headers) {
       const key = ['name', 'total', 'domestic', 'foreign', 'overall', 'avgTime'][i] || 'name';
       return `<td>${r[key] !== undefined ? r[key] : ''}</td>`;
     }).join('')}</tr>`).join('');
+  }
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+// 通用表格渲染（自定义key映射）
+function renderTableCustom(tableId, rows, headers, keys) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  let html = '<thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  if (rows.length === 0) {
+    html += `<tr><td colspan="${headers.length}" style="text-align:center;color:#999;padding:20px">暂无数据</td></tr>`;
+  } else {
+    html += rows.map(r => `<tr>${keys.map(k => `<td>${r[k] !== undefined ? r[k] : ''}</td>`).join('')}</tr>`).join('');
   }
   html += '</tbody>';
   table.innerHTML = html;

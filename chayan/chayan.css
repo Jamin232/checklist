@@ -48,12 +48,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 
 /* KPI 卡片 */
 .kpi-row{display:flex;gap:8px;padding:10px 12px;background:#fff;margin-bottom:2px}
+.kpi-row-week{padding-top:0;margin-bottom:2px}
 .kpi-card{flex:1;background:#f8f9fb;border-radius:10px;padding:12px 6px;text-align:center;transition:transform .15s}
+.kpi-week{background:#f0fdf5;border:0.5px solid #d4f5e3}
 .kpi-num{font-size:20px;font-weight:700;margin-bottom:2px}
 .kpi-label{font-size:11px;color:#888}
 .kpi-domestic .kpi-num{color:var(--danger)}
 .kpi-foreign .kpi-num{color:var(--info)}
 .kpi-overall .kpi-num{color:var(--primary)}
+.kpi-week .kpi-num{color:var(--primary-dark)}
 
 /* 粒度切换 */
 .granularity-bar{display:flex;gap:6px;padding:8px 12px;background:#fff;border-bottom:0.5px solid #f0f0f0}
@@ -81,6 +84,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .alert-table .alert-high td{color:var(--danger);font-weight:500}
 .alert-table .alert-mid td{color:var(--warning)}
 .alert-table .alert-trend td{color:var(--info)}
+
+/* 对比表格 */
+.compare-table .sug-avoid{color:var(--danger);font-weight:700}
+.compare-table .sug-warn{color:var(--warning);font-weight:600}
+.compare-table .sug-good{color:var(--primary);font-weight:600}
 
 /* 阈值设置 */
 .threshold-row{display:flex;gap:16px;padding:12px 14px;background:#fff}
