@@ -422,13 +422,19 @@ function generateAlerts() {
 function createLineChartOption(title, timeKeys, seriesData) {
   return {
     title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
-    tooltip: { trigger: 'axis', formatter: params => {
-      let s = params[0].axisValue + '<br/>';
-      params.forEach(p => {
-        s += `${p.marker} ${p.seriesName}: ${p.value.toFixed(2)}%<br/>`;
-      });
-      return s;
-    }},
+    tooltip: { 
+      trigger: 'axis', 
+      snap: true,
+      confine: true,
+      axisPointer: { type: 'none', animation: false },
+      formatter: params => {
+        let s = params[0].axisValue + '<br/>';
+        params.forEach(p => {
+          s += `${p.marker} ${p.seriesName}: ${p.value.toFixed(2)}%<br/>`;
+        });
+        return s;
+      }
+    },
     legend: { data: seriesData.map(s => s.name), bottom: 0 },
     grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
     xAxis: { type: 'category', data: timeKeys, axisLabel: { rotate: 30, fontSize: 10 } },
@@ -627,7 +633,7 @@ function updateDashboardTab() {
       ]
     );
     option.color = [COLORS.domestic, COLORS.foreign, COLORS.overall];
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 渠道趋势：Top 6 渠道的周度查验率对比线图
@@ -678,7 +684,7 @@ function updateChannelTrendChart() {
   option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
 
   const chart = setChart('channelTrendChart', chartDom);
-  chart.setOption(option, false);
+  chart.setOption(option, { notMerge: true, lazyUpdate: true });
 }
 
 // 渲染渠道选择器标签
@@ -737,7 +743,7 @@ function updateChannelTab() {
       { name: '目的港', data: foreignData, color: COLORS.foreign },
       { name: '综合', data: overallData, color: COLORS.overall }
     ]);
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 美国子渠道
@@ -757,7 +763,7 @@ function updateChannelTab() {
       { name: '目的港', data: usForeign, color: COLORS.foreign },
       { name: '综合', data: usOverall, color: COLORS.overall }
     ]);
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 素芸渠道表格
@@ -843,7 +849,7 @@ function updateAgentTab() {
       { name: '目的港', data: foreignData, color: COLORS.foreign },
       { name: '综合', data: overallData, color: COLORS.overall }
     ]);
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 代理绩效对比表（最近两周环比）
@@ -987,7 +993,7 @@ function buildAgentChannelHeatmap() {
   if (chartDom) {
     const chart = setChart('agentChannelHeatmap', chartDom);
     const option = createHeatmapOption('代理×渠道综合查验率', topChannels, topAgents, heatData);
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 }
 
@@ -1088,7 +1094,7 @@ function updateDrilldownTab() {
     const option = createBarChartOption(`${channel} 上周代理起运港查验率`, names, [
       { name: '起运港', data: domData, color: COLORS.domestic }
     ]);
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 趋势图：当前渠道下各代理的起运港查验率周趋势
@@ -1123,7 +1129,7 @@ function updateDrilldownTab() {
     option.color = palette.slice(0, series.length);
     option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
     option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
-    chart.setOption(option, true);
+    chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
   // 表格：上周渠道代理明细
