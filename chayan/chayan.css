@@ -126,3 +126,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 
 /* 热力图提示 */
 .heatmap-tip{font-size:11px;color:#888;padding:8px 14px;background:#f8f9fb;line-height:1.5}
+
+/* 渠道趋势图选择器 */
+.channel-filter-bar{padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0}
+.metric-toggle{display:flex;gap:6px;margin-bottom:10px}
+.metric-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
+.metric-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
+.channel-tags{display:flex;flex-wrap:wrap;gap:6px}
+.channel-tag{padding:4px 10px;border-radius:12px;font-size:11px;background:#f0f0f0;color:#666;cursor:pointer;transition:all .15s;border:0.5px solid transparent;white-space:nowrap}
+.channel-tag.active{background:var(--primary);color:#fff;border-color:var(--primary-dark)}

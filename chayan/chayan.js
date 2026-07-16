@@ -43,8 +43,12 @@ let aggByCustomer = {}; // 客户聚合
 let aggByProduct = {};  // 产品属性聚合
 let aggByLogistic = {}; // 素芸物流渠道聚合
 let aggByAgentWeekly = {};  // 代理周度拆解 {agent: {weekKey: {total, inspected, domestic}}}
+let aggByChannelMonth = {}; // 渠道月度拆解
 let aggByChannelWeekly = {}; // 渠道周度拆解 {channel: {weekKey: {total, inspected, domestic}}}
 let allWeekKeys = [];    // 所有周Key（排序后）
+let allMonthKeys = [];   // 所有月份Key（排序后）
+let selectedChannels = []; // 用户选中的渠道（用于趋势图）
+let channelTrendMetric = 'overall'; // 趋势图指标: 'overall' | 'domestic' | 'foreign'
 
 // ===================== 工具函数 =====================
 
@@ -269,11 +273,12 @@ function aggregateBy(records, getKey, opts = {}) {
     if (timeGranularity) {
       const tKey = timeGranularity === 'week' ? getWeekKey(rec.shipDate) : formatDateYM(rec.shipDate);
       if (!map[key].timeSeries[tKey]) {
-        map[key].timeSeries[tKey] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0 };
+        map[key].timeSeries[tKey] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0, foreignTickets: 0 };
       }
       map[key].timeSeries[tKey].totalTickets += rec.ticketCount;
       if (rec.isInspected) map[key].timeSeries[tKey].inspectedTickets += rec.ticketCount;
       if (rec.isDomestic) map[key].timeSeries[tKey].domesticTickets += rec.ticketCount;
+      if (rec.isForeign) map[key].timeSeries[tKey].foreignTickets += rec.ticketCount;
     }
   }
 
@@ -456,10 +461,10 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
   return {
     title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
     tooltip: { position: 'top', formatter: p => `${p.name}: ${p.data[2].toFixed(2)}%` },
-    grid: { left: '15%', right: '10%', top: '15%', bottom: '15%' },
+    grid: { left: '22%', right: '15%', top: '12%', bottom: '18%' },
     xAxis: { type: 'category', data: xLabels, splitArea: { show: true }, axisLabel: { rotate: 45, fontSize: 10 } },
     yAxis: { type: 'category', data: yLabels, splitArea: { show: true }, axisLabel: { fontSize: 10 } },
-    visualMap: { min: 0, max: 10, calculable: true, orient: 'horizontal', left: 'center', bottom: '0%', inRange: { color: ['#e8f7ef', '#fff3cd', '#d62929'] } },
+    visualMap: { min: 0, max: 10, calculable: false, orient: 'vertical', right: '2%', top: 'center', itemHeight: 120, inRange: { color: ['#e8f7ef', '#fff3cd', '#d62929'] } },
     series: [{ name: '查验率', type: 'heatmap', data, label: { show: true, fontSize: 10, formatter: p => p.data[2] > 0 ? p.data[2].toFixed(1) : '' } }]
   };
 }
@@ -477,6 +482,7 @@ async function loadAndProcess(file) {
     // 全量聚合
     aggByTime = { week: aggregateByTime(records, 'week'), month: aggregateByTime(records, 'month') };
     aggByChannel = aggregateBy(records, r => r.channel, { timeGranularity: 'week' });
+    aggByChannelMonth = aggregateBy(records, r => r.channel, { timeGranularity: 'month' });
     aggByAgent = aggregateBy(records, r => r.agent, { timeGranularity: 'week' });
     aggByUsSub = aggregateBy(records, r => r.usSubChannel);
     aggByLogistic = aggregateBy(records, r => r.logisticChannel);
@@ -490,6 +496,16 @@ async function loadAndProcess(file) {
     const weekSet = new Set();
     Object.values(aggByAgentWeekly).forEach(wm => Object.keys(wm).forEach(k => weekSet.add(k)));
     allWeekKeys = [...weekSet].sort();
+    // 收集所有月份Key
+    const monthSet = new Set();
+    Object.values(aggByChannelMonth).forEach(d => Object.keys(d.timeSeries).forEach(k => monthSet.add(k)));
+    allMonthKeys = [...monthSet].sort();
+    // 初始化选中渠道：综合查验率 Top6
+    selectedChannels = Object.entries(aggByChannel)
+      .filter(([k, v]) => k && v.totalTickets >= 20)
+      .sort((a, b) => b[1].overallRate - a[1].overallRate)
+      .slice(0, 6)
+      .map(([k]) => k);
 
     // 隐藏上传面板，显示主内容
     const uploadPanel = document.getElementById('uploadPanel');
@@ -510,6 +526,7 @@ async function loadAndProcess(file) {
 
     // 更新 UI
     updateAllTabs();
+    renderChannelSelector();
     showLoading(false);
     return true;
   } catch (err) {
@@ -539,8 +556,11 @@ function updateAllTabs() {
   updateAlertTab();
 }
 
-function setChart(domId, chart) {
-  if (chartInstances[domId]) chartInstances[domId].dispose();
+// 获取或创建图表实例（只初始化一次，后续复用，避免 dispose/reinit 渲染空白）
+function setChart(domId, domEl) {
+  let chart = chartInstances[domId];
+  if (chart && !chart.isDisposed()) return chart;
+  chart = echarts.init(domEl);
   chartInstances[domId] = chart;
   return chart;
 }
@@ -559,7 +579,7 @@ function updateDashboardTab() {
   document.getElementById('kpiTotal').textContent = total.toLocaleString();
   document.getElementById('kpiDomestic').textContent = (total > 0 ? (dom / total * 100).toFixed(2) : '0.00') + '%';
   document.getElementById('kpiForeign').textContent = (total > 0 ? (foreign / total * 100).toFixed(2) : '0.00') + '%';
-  document.getElementById('kpiOverall').textContent = (total > 0 ? (inspected / total * 100).toFixed(2) : '0.00') + '%';
+  document.getElementById('kpiOverall').textContent = (total > 0 ? ((dom + foreign) / total * 100).toFixed(2) : '0.00') + '%';
 
   // KPI: 上周（倒数第2周，本周刚开始数据不全）
   if (allWeekKeys.length >= 2) {
@@ -580,7 +600,7 @@ function updateDashboardTab() {
 
   const chartDom = document.getElementById('trendChart');
   if (chartDom) {
-    const chart = setChart('trendChart', echarts.init(chartDom));
+    const chart = setChart('trendChart', chartDom);
     const option = createLineChartOption(
       `总体查验率趋势 (${currentGranularity === 'week' ? '周度' : '月度'})`,
       keys,
@@ -598,32 +618,85 @@ function updateDashboardTab() {
   updateChannelTrendChart();
 }
 
-// 渠道趋势线图
+// 渠道趋势线图（支持自选渠道 + 指标切换 + 周度/月度）
 function updateChannelTrendChart() {
-  if (allWeekKeys.length < 2) return;
   const chartDom = document.getElementById('channelTrendChart');
   if (!chartDom) return;
 
-  // 取综合查验率 Top 6 渠道（至少有最近一周数据）
-  const ranked = Object.entries(aggByChannel)
-    .filter(([k, v]) => k && v.totalTickets >= 20)
-    .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 6);
+  const isWeek = currentGranularity === 'week';
+  const dataMap = isWeek ? aggByChannel : aggByChannelMonth;
+  const timeKeys = isWeek ? allWeekKeys : allMonthKeys;
 
-  const series = ranked.map(([name, v], idx) => {
-    const data = getEntityRateSeries(aggByChannelWeekly, name, allWeekKeys, 'combined');
-    return { name, data, lineStyle: { width: 2 } };
+  if (timeKeys.length < 2) return;
+
+  // 过滤用户选中的渠道（确保数据存在）
+  const activeChannels = selectedChannels.filter(ch => dataMap[ch]);
+  if (activeChannels.length === 0) {
+    // 如果没有选中任何渠道，默认选 Top6
+    activeChannels.push(...Object.entries(dataMap)
+      .filter(([k, v]) => k && v.totalTickets >= 20)
+      .sort((a, b) => b[1].overallRate - a[1].overallRate)
+      .slice(0, 6)
+      .map(([k]) => k));
+  }
+
+  const series = activeChannels.map((ch, idx) => {
+    const ts = dataMap[ch].timeSeries || {};
+    const data = timeKeys.map(tk => {
+      const d = ts[tk];
+      if (!d || d.totalTickets === 0) return null;
+      let num = 0;
+      if (channelTrendMetric === 'domestic') num = d.domesticTickets;
+      else if (channelTrendMetric === 'foreign') num = d.foreignTickets;
+      else num = d.inspectedTickets;
+      return parseFloat((num / d.totalTickets * 100).toFixed(1));
+    });
+    return { name: ch, data, lineStyle: { width: 2 } };
   });
 
-  const option = createLineChartOption('渠道查验率周趋势', allWeekKeys, series);
-  // 给每条线不同颜色
-  const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899'];
+  const metricName = channelTrendMetric === 'domestic' ? '起运港' : (channelTrendMetric === 'foreign' ? '目的港' : '综合');
+  const option = createLineChartOption(`渠道查验率${isWeek ? '周' : '月'}趋势（${metricName}）`, timeKeys, series);
+  const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#06b6d4', '#84cc16'];
   option.color = palette.slice(0, series.length);
   option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
   option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
 
-  const chart = setChart('channelTrendChart', echarts.init(chartDom));
+  const chart = setChart('channelTrendChart', chartDom);
   chart.setOption(option, true);
+}
+
+// 渲染渠道选择器标签
+function renderChannelSelector() {
+  const container = document.getElementById('channelTags');
+  if (!container) return;
+  const allChannels = Object.entries(aggByChannel)
+    .filter(([k, v]) => k && v.totalTickets >= 20)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .map(([k]) => k);
+  container.innerHTML = allChannels.map(ch => {
+    const isSelected = selectedChannels.includes(ch);
+    return `<span class="channel-tag ${isSelected ? 'active' : ''}" onclick="toggleChannel('${ch}')">${ch}</span>`;
+  }).join('');
+}
+
+// 切换渠道选中状态
+function toggleChannel(channel) {
+  if (selectedChannels.includes(channel)) {
+    selectedChannels = selectedChannels.filter(c => c !== channel);
+  } else {
+    selectedChannels.push(channel);
+  }
+  renderChannelSelector();
+  updateChannelTrendChart();
+}
+
+// 设置趋势图指标
+function setChannelMetric(metric) {
+  channelTrendMetric = metric;
+  document.querySelectorAll('.metric-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.metric === metric);
+  });
+  updateChannelTrendChart();
 }
 
 // 渠道分析
@@ -640,7 +713,7 @@ function updateChannelTab() {
 
   const chartDom = document.getElementById('channelChart');
   if (chartDom) {
-    const chart = setChart('channelChart', echarts.init(chartDom));
+    const chart = setChart('channelChart', chartDom);
     const option = createBarChartOption('渠道大类查验率 Top20', catNames, [
       { name: '起运港', data: domData, color: COLORS.domestic },
       { name: '目的港', data: foreignData, color: COLORS.foreign },
@@ -660,7 +733,7 @@ function updateChannelTab() {
 
   const usChartDom = document.getElementById('usSubChart');
   if (usChartDom) {
-    const chart = setChart('usSubChart', echarts.init(usChartDom));
+    const chart = setChart('usSubChart', usChartDom);
     const option = createBarChartOption('美国海运子渠道查验率', usNames, [
       { name: '起运港', data: usDom, color: COLORS.domestic },
       { name: '目的港', data: usForeign, color: COLORS.foreign },
@@ -746,7 +819,7 @@ function updateAgentTab() {
 
   const chartDom = document.getElementById('agentChart');
   if (chartDom) {
-    const chart = setChart('agentChart', echarts.init(chartDom));
+    const chart = setChart('agentChart', chartDom);
     const option = createBarChartOption('代理查验率 Top20', names, [
       { name: '起运港', data: domData, color: COLORS.domestic },
       { name: '目的港', data: foreignData, color: COLORS.foreign },
@@ -869,16 +942,16 @@ function buildAgentComparisonTable() {
 
 // 代理明细表
 function buildAgentChannelHeatmap() {
-  // 取 Top 10 代理和 Top 10 渠道
+  // 取 Top 15 代理和 Top 15 渠道（热力图空间已加大）
   const topAgents = Object.entries(aggByAgent)
     .filter(([k, v]) => k && v.totalTickets >= 20)
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 10)
+    .slice(0, 15)
     .map(([k]) => k);
   const topChannels = Object.entries(aggByChannel)
     .filter(([k, v]) => k && v.totalTickets >= 20)
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 10)
+    .slice(0, 15)
     .map(([k]) => k);
 
   const heatData = [];
@@ -894,7 +967,7 @@ function buildAgentChannelHeatmap() {
 
   const chartDom = document.getElementById('agentChannelHeatmap');
   if (chartDom) {
-    const chart = setChart('agentChannelHeatmap', echarts.init(chartDom));
+    const chart = setChart('agentChannelHeatmap', chartDom);
     const option = createHeatmapOption('代理×渠道综合查验率', topChannels, topAgents, heatData);
     chart.setOption(option, true);
   }
@@ -914,7 +987,7 @@ function updateDrilldownTab() {
 
   resultDiv.style.display = 'block';
   const titleEl = document.getElementById('drilldownTitle');
-  if (titleEl) titleEl.textContent = `${channel} — 上周代理表现`;
+  if (titleEl) titleEl.textContent = `${channel} — 上周渠道代理明细`;
 
   // 筛选该渠道下的记录
   const subset = records.filter(r => r.channel === channel);
@@ -923,9 +996,11 @@ function updateDrilldownTab() {
   const lastWk = allWeekKeys[allWeekKeys.length - 2];  // 上周
   const prevWk = allWeekKeys[allWeekKeys.length - 3]; // 上上周
 
-  // 按代理+周聚合（起运港）
-  const weeklyAgentMap = {}; // {weekKey: {agent: {total, domestic}}}
-  const weeklyTotalMap = {};   // {weekKey: totalTickets}
+  // 按代理+周聚合（起运港 + 重量）
+  const weeklyAgentMap = {};      // {weekKey: {agent: {total, domestic}}}
+  const weeklyAgentWeightMap = {}; // {weekKey: {agent: totalWeight}}
+  const weeklyTotalMap = {};       // {weekKey: totalTickets}
+  const weeklyWeightMap = {};      // {weekKey: totalWeight}
   for (const r of subset) {
     if (!r.shipDate) continue;
     const wk = getWeekKey(r.shipDate);
@@ -935,21 +1010,32 @@ function updateDrilldownTab() {
     if (!weeklyAgentMap[wk][a]) weeklyAgentMap[wk][a] = { total: 0, domestic: 0 };
     weeklyAgentMap[wk][a].total += r.ticketCount;
     if (r.isDomestic) weeklyAgentMap[wk][a].domestic += r.ticketCount;
+
+    // 重量聚合
+    if (!weeklyAgentWeightMap[wk]) weeklyAgentWeightMap[wk] = {};
+    if (!weeklyAgentWeightMap[wk][a]) weeklyAgentWeightMap[wk][a] = 0;
+    weeklyAgentWeightMap[wk][a] += r.weight * r.ticketCount;
+
     weeklyTotalMap[wk] = (weeklyTotalMap[wk] || 0) + r.ticketCount;
+    weeklyWeightMap[wk] = (weeklyWeightMap[wk] || 0) + r.weight * r.ticketCount;
   }
   const sortedWeeks = Object.keys(weeklyAgentMap).sort();
 
   // 上周代理数据
   const lastWkTotal = weeklyTotalMap[lastWk] || 0;
+  const lastWkWeight = weeklyWeightMap[lastWk] || 0;
   const prevWkTotal = weeklyTotalMap[prevWk] || 0;
   const lastWkAgents = weeklyAgentMap[lastWk] || {};
   const prevWkAgents = weeklyAgentMap[prevWk] || {};
+  const lastWkAgentWeights = weeklyAgentWeightMap[lastWk] || {};
 
   const rows = [];
   for (const [agent, d] of Object.entries(lastWkAgents)) {
-    if (d.total < 5) continue;
+    if (d.total === 0) continue;
     const lastRate = d.domestic / d.total * 100;
     const lastShare = lastWkTotal > 0 ? d.total / lastWkTotal * 100 : 0;
+    const lastWeight = lastWkAgentWeights[agent] || 0;
+    const weightShare = lastWkWeight > 0 ? lastWeight / lastWkWeight * 100 : 0;
 
     // 上上周数据
     let prevRate = null, prevTotal = 0;
@@ -970,7 +1056,7 @@ function updateDrilldownTab() {
     else if (lastRate <= 1) suggestion = '✅ 推荐';
     else suggestion = '👌 正常';
 
-    rows.push({ agent, total: d.total, share: lastShare, lastRate, prevRate, delta, suggestion });
+    rows.push({ agent, total: d.total, share: lastShare, weightShare, lastRate, prevRate, delta, suggestion });
   }
   // 按上周国内查验率排序（高->低）
   rows.sort((a, b) => b.lastRate - a.lastRate);
@@ -980,19 +1066,33 @@ function updateDrilldownTab() {
   if (chartDom) {
     const names = rows.map(r => r.agent);
     const domData = rows.map(r => ({ value: r.lastRate, count: r.total }));
-    const chart = setChart('drilldownChart', echarts.init(chartDom));
+    const chart = setChart('drilldownChart', chartDom);
     const option = createBarChartOption(`${channel} 上周代理起运港查验率`, names, [
       { name: '起运港', data: domData, color: COLORS.domestic }
     ]);
     chart.setOption(option, true);
   }
 
-  // 趋势图：保留（全周趋势，按起运港）
+  // 趋势图：当前渠道下各代理的起运港查验率周趋势
+  // 美国海运代理多时取 Top6（按上周票数），其余展示全部
   const trendDom = document.getElementById('drilldownTrendChart');
+  const trendTitleEl = document.getElementById('drilldownTrendTitle');
   if (trendDom && sortedWeeks.length >= 2) {
-    const topAgents = [...rows].sort((a, b) => b.total - a.total).slice(0, 6).map(r => r.agent);
-    const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899'];
-    const series = topAgents.map((agent, idx) => {
+    // 确定要展示的代理列表（按上周票数降序）
+    const allAgents = [...rows].sort((a, b) => b.total - a.total).map(r => r.agent);
+    const isUsSea = channel === '美国海运';
+    let showAgents = allAgents;
+    if (isUsSea && allAgents.length > 6) {
+      showAgents = allAgents.slice(0, 6);
+    }
+    const showTopN = showAgents.length < allAgents.length;
+
+    if (trendTitleEl) {
+      trendTitleEl.textContent = `📈 ${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`;
+    }
+
+    const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#06b6d4', '#84cc16'];
+    const series = showAgents.map((agent, idx) => {
       const data = sortedWeeks.map(wk => {
         const d = weeklyAgentMap[wk] && weeklyAgentMap[wk][agent];
         if (!d || d.total === 0) return null;
@@ -1000,15 +1100,15 @@ function updateDrilldownTab() {
       });
       return { name: agent, data, lineStyle: { width: 2 }, itemStyle: { color: palette[idx % palette.length] } };
     });
-    const chart = setChart('drilldownTrendChart', echarts.init(trendDom));
-    const option = createLineChartOption('代理起运港查验率周趋势（Top6）', sortedWeeks, series);
+    const chart = setChart('drilldownTrendChart', trendDom);
+    const option = createLineChartOption(`${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`, sortedWeeks, series);
     option.color = palette.slice(0, series.length);
     option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
     option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
     chart.setOption(option, true);
   }
 
-  // 表格：上周代理表现
+  // 表格：上周渠道代理明细
   const tbody = document.getElementById('drilldownTableBody');
   if (tbody) {
     tbody.innerHTML = rows.map(r => {
@@ -1025,8 +1125,9 @@ function updateDrilldownTab() {
       return `<tr>
         <td>${r.agent}</td>
         <td>${r.total.toLocaleString()}</td>
-        <td style="color:#d62929;font-weight:500">${r.lastRate.toFixed(1)}%</td>
         <td>${r.share.toFixed(1)}%</td>
+        <td>${r.weightShare.toFixed(1)}%</td>
+        <td style="color:#d62929;font-weight:500">${r.lastRate.toFixed(1)}%</td>
         <td>${r.prevRate !== null ? r.prevRate.toFixed(1)+'%' : '—'}</td>
         <td>${deltaHtml}</td>
         <td class="${sugClass}">${r.suggestion}</td>
@@ -1210,7 +1311,9 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
   document.getElementById('pane-' + tabName)?.classList.add('active');
   currentView = tabName;
-  // 重新渲染图表（因为隐藏状态下 echarts 尺寸不对）
+  // 先 resize 恢复尺寸（切换回来时容器可能刚从 display:none 恢复）
+  setTimeout(() => resizeCharts(), 50);
+  // 重新渲染图表
   if (tabName === 'dashboard') updateDashboardTab();
   if (tabName === 'channel') updateChannelTab();
   if (tabName === 'agent') updateAgentTab();
@@ -1221,8 +1324,8 @@ function switchTab(tabName) {
     const searchInput = document.getElementById('detailSearch');
     filterDetailTable(searchInput ? searchInput.value : '');
   }
-  // 延迟 resize 确保 DOM 已更新
-  setTimeout(resizeCharts, 100);
+  // 再次 resize 确保渲染后尺寸正确
+  setTimeout(resizeCharts, 150);
 }
 
 // ===================== 初始化 =====================

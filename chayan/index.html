@@ -102,7 +102,15 @@
       <!-- 渠道趋势图 -->
       <div class="section">
         <div class="section-header">
-          <div class="section-title">🏭 渠道查验率周趋势（Top6）</div>
+          <div class="section-title">🏭 渠道查验率趋势</div>
+        </div>
+        <div class="channel-filter-bar">
+          <div class="metric-toggle">
+            <span class="metric-btn active" data-metric="overall" onclick="setChannelMetric('overall')">综合</span>
+            <span class="metric-btn" data-metric="domestic" onclick="setChannelMetric('domestic')">起运港</span>
+            <span class="metric-btn" data-metric="foreign" onclick="setChannelMetric('foreign')">目的港</span>
+          </div>
+          <div class="channel-tags" id="channelTags"></div>
         </div>
         <div class="chart-container" id="channelTrendChart"></div>
       </div>
@@ -176,7 +184,7 @@
           💡 横轴=渠道大类，纵轴=代理，颜色越深=查验率越高。<br>
           找出你的代理在哪些渠道上表现特别差（深红格），这些是你要规避的组合。
         </div>
-        <div class="chart-container" id="agentChannelHeatmap" style="height:380px"></div>
+        <div class="chart-container" id="agentChannelHeatmap" style="height:480px"></div>
       </div>
     </div>
 
@@ -196,21 +204,21 @@
       </div>
       <div class="section" id="drilldownResult" style="display:none">
         <div class="section-header">
-          <div class="section-title" id="drilldownTitle">上周代理表现</div>
+          <div class="section-title" id="drilldownTitle">上周渠道代理明细</div>
         </div>
         <div class="chart-container" id="drilldownChart"></div>
 
         <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title">📈 代理起运港查验率周趋势（Top6）</div>
+          <div class="section-title" id="drilldownTrendTitle">📈 代理起运港查验率周趋势</div>
         </div>
         <div class="chart-container" id="drilldownTrendChart"></div>
 
         <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title">📋 代理表现明细</div>
+          <div class="section-title">📋 上周渠道代理明细</div>
         </div>
         <div class="table-wrap">
           <table class="data-table compare-table">
-            <thead><tr><th>代理</th><th>票数</th><th>上周起运港</th><th>票占比</th><th>上上周起运港</th><th>变化</th><th>建议</th></tr></thead>
+            <thead><tr><th>代理</th><th>上周票数</th><th>上周票数占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周重量占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周起运港</th><th>上上周起运港</th><th>变化</th><th>建议</th></tr></thead>
             <tbody id="drilldownTableBody"></tbody>
           </table>
         </div>
