@@ -561,13 +561,13 @@ function updateDashboardTab() {
   document.getElementById('kpiForeign').textContent = (total > 0 ? (foreign / total * 100).toFixed(2) : '0.00') + '%';
   document.getElementById('kpiOverall').textContent = (total > 0 ? (inspected / total * 100).toFixed(2) : '0.00') + '%';
 
-  // KPI: 最近一周
-  if (allWeekKeys.length > 0) {
-    const lastWk = allWeekKeys[allWeekKeys.length - 1];
+  // KPI: 上周（倒数第2周，本周刚开始数据不全）
+  if (allWeekKeys.length >= 2) {
+    const prevWk = allWeekKeys[allWeekKeys.length - 2];
     const timeData = aggByTime['week'];
-    if (timeData[lastWk]) {
-      document.getElementById('kpiWeekRate').textContent = timeData[lastWk].overallRate.toFixed(1) + '%';
-      document.getElementById('kpiWeekTotal').textContent = timeData[lastWk].totalTickets.toLocaleString();
+    if (timeData[prevWk]) {
+      document.getElementById('kpiWeekRate').textContent = timeData[prevWk].overallRate.toFixed(1) + '%';
+      document.getElementById('kpiWeekTotal').textContent = timeData[prevWk].totalTickets.toLocaleString();
     }
   }
 
@@ -679,9 +679,9 @@ function updateChannelTab() {
       domestic: v.domesticRate.toFixed(2) + '%',
       foreign: v.foreignRate.toFixed(2) + '%',
       overall: v.overallRate.toFixed(2) + '%',
-      avgTime: v.avgInspectTime > 0 ? v.avgInspectTime.toFixed(1) + '天' : '-'
+      avgTime: v.domesticTickets + v.foreignTickets  // 复用 avgTime 字段存查验票数，renderTable 映射用第6列
     })),
-    ['渠道名', '票数', '起运港', '目的港', '综合', '平均时效']
+    ['渠道名', '票数', '起运港', '目的港', '综合', '查验票数']
   );
 
   // 渠道大类周期对比表
@@ -693,18 +693,19 @@ function buildChannelComparisonTable() {
   const tbody = document.getElementById('channelCompareBody');
   if (!tbody) return;
 
-  if (allWeekKeys.length < 2) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:16px">需要至少两周数据</td></tr>';
+  if (allWeekKeys.length < 3) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:16px">需要至少三周数据</td></tr>';
     return;
   }
 
-  const lastWk = allWeekKeys[allWeekKeys.length - 1];
+  // 上上周 vs 上周（本周刚开始数据不全，不看本周）
   const prevWk = allWeekKeys[allWeekKeys.length - 2];
+  const prev2Wk = allWeekKeys[allWeekKeys.length - 3];
 
   const rows = [];
   for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
-    const cur = wm[lastWk];
-    const prev = wm[prevWk];
+    const cur = wm[prevWk];   // 上周
+    const prev = wm[prev2Wk]; // 上上周
     if (!cur || cur.totalTickets < 10) continue;
     const curRate = cur.inspectedTickets / cur.totalTickets * 100;
     const prevRate = prev && prev.totalTickets >= 5 ? prev.inspectedTickets / prev.totalTickets * 100 : null;
@@ -779,21 +780,14 @@ function buildAgentComparisonTable() {
     const foreignRate = data.foreignRate;
     const totalTickets = data.totalTickets;
 
-    // 最近两周变化（综合查验率）
+    // 上上周→上周变化（本周数据刚开始不全，不看本周）
     let delta = null;
-    if (allWeekKeys.length >= 2) {
+    if (allWeekKeys.length >= 3) {
       const wm = aggByAgentWeekly[agent];
       if (wm) {
-        // 找最近两周都有数据的
-        let lastWk = null, prevWk = null;
-        for (let i = allWeekKeys.length - 1; i >= 0; i--) {
-          const wk = allWeekKeys[i];
-          if (wm[wk] && wm[wk].totalTickets >= 5) {
-            if (!lastWk) lastWk = wk;
-            else if (!prevWk) { prevWk = wk; break; }
-          }
-        }
-        if (lastWk && prevWk) {
+        const lastWk = allWeekKeys[allWeekKeys.length - 2];  // 上周
+        const prevWk = allWeekKeys[allWeekKeys.length - 3]; // 上上周
+        if (wm[lastWk] && wm[lastWk].totalTickets >= 5 && wm[prevWk] && wm[prevWk].totalTickets >= 5) {
           const lastR = wm[lastWk].inspectedTickets / wm[lastWk].totalTickets * 100;
           const prevR = wm[prevWk].inspectedTickets / wm[prevWk].totalTickets * 100;
           delta = lastR - prevR;
@@ -850,13 +844,13 @@ function renderAgentDetailTable() {
   const rows = [];
   for (const [agent, data] of Object.entries(aggByAgent)) {
     if (!agent || data.totalTickets < 5) continue;
-    // 计算最近一周趋势
+    // 上上周→上周趋势（本周刚开始数据不全，不看本周）
     let trend = '';
-    if (allWeekKeys.length >= 2) {
+    if (allWeekKeys.length >= 3) {
       const wm = aggByAgentWeekly[agent];
       if (wm) {
-        const last = wm[allWeekKeys[allWeekKeys.length - 1]];
-        const prev = wm[allWeekKeys[allWeekKeys.length - 2]];
+        const last = wm[allWeekKeys[allWeekKeys.length - 2]];  // 上周
+        const prev = wm[allWeekKeys[allWeekKeys.length - 3]]; // 上上周
         if (last && prev && last.totalTickets >= 3 && prev.totalTickets >= 3) {
           const curR = last.inspectedTickets / last.totalTickets * 100;
           const prevR = prev.inspectedTickets / prev.totalTickets * 100;
@@ -966,21 +960,16 @@ function updateDrilldownTab() {
       const overallRate = v.inspected / v.total * 100;
       const share = totalInChannel > 0 ? (v.total / totalInChannel * 100) : 0;
 
-      // 最近两周起运港变化
+      // 上上周→上周起运港变化（本周数据不全，不看本周）
       let domDelta = null;
-      if (sortedWeeks.length >= 2) {
-        let lastWk = null, prevWk = null;
-        for (let i = sortedWeeks.length - 1; i >= 0; i--) {
-          const wk = sortedWeeks[i];
-          const d = weeklyAgentMap[wk][agent];
-          if (d && d.total >= 5) {
-            if (!lastWk) lastWk = wk;
-            else if (!prevWk) { prevWk = wk; break; }
-          }
-        }
-        if (lastWk && prevWk) {
-          const lastR = weeklyAgentMap[lastWk][agent].domestic / weeklyAgentMap[lastWk][agent].total * 100;
-          const prevR = weeklyAgentMap[prevWk][agent].domestic / weeklyAgentMap[prevWk][agent].total * 100;
+      if (sortedWeeks.length >= 3) {
+        const lastWk = sortedWeeks[sortedWeeks.length - 2];  // 上周
+        const prevWk = sortedWeeks[sortedWeeks.length - 3]; // 上上周
+        const lastD = weeklyAgentMap[lastWk] && weeklyAgentMap[lastWk][agent];
+        const prevD = weeklyAgentMap[prevWk] && weeklyAgentMap[prevWk][agent];
+        if (lastD && lastD.total >= 5 && prevD && prevD.total >= 5) {
+          const lastR = lastD.domestic / lastD.total * 100;
+          const prevR = prevD.domestic / prevD.total * 100;
           domDelta = lastR - prevR;
         }
       }
