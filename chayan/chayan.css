@@ -1,0 +1,111 @@
+/* ===================== 查验率监控样式 ===================== */
+:root {
+  --primary: #07c160;
+  --primary-dark: #06ad56;
+  --danger: #d62929;
+  --warning: #e6a23c;
+  --info: #1764e8;
+  --bg: #f5f5f5;
+  --card: #fff;
+  --border: #e5e5e5;
+  --text: #222;
+  --text-secondary: #666;
+  --radius: 8px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;font-size:13px;background:var(--bg);color:var(--text);line-height:1.5}
+.app{max-width:640px;margin:0 auto;background:var(--bg);min-height:100vh;position:relative}
+
+/* Header */
+.header{background:linear-gradient(135deg,#0d6e3e,var(--primary));color:#fff;padding:14px 16px 10px;position:sticky;top:0;z-index:10}
+.header-top{display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:17px;font-weight:600}
+.date-bar{font-size:12px;opacity:.85}
+.sub-title{font-size:12px;opacity:.8;margin-top:2px}
+
+/* Tab 导航 */
+.tab-bar{display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:58px;z-index:9}
+.tab-btn{flex:1;text-align:center;padding:10px 4px;font-size:13px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;-webkit-tap-highlight-color:transparent}
+.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+
+/* 上传面板 */
+.upload-panel{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.upload-card{background:#fff;border-radius:12px;padding:24px 20px;width:100%;max-width:400px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.upload-icon{font-size:48px;margin-bottom:8px}
+.upload-title{font-size:16px;font-weight:600;margin-bottom:6px}
+.upload-desc{font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6}
+.upload-zone{border:2px dashed #d0d0d0;border-radius:8px;padding:24px 16px;cursor:pointer;transition:all .2s;margin-bottom:14px}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--primary);background:#f0fdf5}
+.upload-zone div:first-child{font-size:14px;color:var(--text);font-weight:500}
+.upload-hint{font-size:11px;color:#999;margin-top:4px}
+.upload-note{font-size:11px;color:#888;line-height:1.6;text-align:left;background:#f8f9fb;border-radius:6px;padding:10px 12px}
+.tag-mature{color:#e6a23c;font-weight:500}
+
+/* 主内容 */
+.tab-pane{display:none;padding-bottom:20px}
+.tab-pane.active{display:block}
+
+/* KPI 卡片 */
+.kpi-row{display:flex;gap:8px;padding:10px 12px;background:#fff;margin-bottom:2px}
+.kpi-card{flex:1;background:#f8f9fb;border-radius:10px;padding:12px 6px;text-align:center;transition:transform .15s}
+.kpi-num{font-size:20px;font-weight:700;margin-bottom:2px}
+.kpi-label{font-size:11px;color:#888}
+.kpi-domestic .kpi-num{color:var(--danger)}
+.kpi-foreign .kpi-num{color:var(--info)}
+.kpi-overall .kpi-num{color:var(--primary)}
+
+/* 粒度切换 */
+.granularity-bar{display:flex;gap:6px;padding:8px 12px;background:#fff;border-bottom:0.5px solid #f0f0f0}
+.granularity-btn{padding:5px 14px;border-radius:14px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;border:none;transition:all .15s}
+.granularity-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border:0.5px solid #b2e5c9}
+
+/* Section 卡片 */
+.section{background:#fff;border-radius:var(--radius);margin:10px;overflow:hidden;border:0.5px solid #e8e8e8}
+.section-header{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid #f0f0f0}
+.section-title{font-size:13px;font-weight:600;color:#111;display:flex;align-items:center;gap:6px}
+.section-note{font-size:11px;color:#aaa}
+
+/* 图表容器 */
+.chart-container{width:100%;height:320px;padding:8px}
+
+/* 表格 */
+.table-wrap{overflow-x:auto;padding:0 8px 8px}
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{background:#f8f9fb;color:#555;font-weight:600;padding:8px 6px;text-align:left;border-bottom:1px solid #eee;white-space:nowrap}
+.data-table td{padding:7px 6px;border-bottom:0.5px solid #f0f0f0;color:#333;white-space:nowrap}
+.data-table tr:nth-child(even){background:#fafafa}
+.data-table tr:hover{background:#f0fdf5}
+
+/* 预警表格 */
+.alert-table .alert-high td{color:var(--danger);font-weight:500}
+.alert-table .alert-mid td{color:var(--warning)}
+.alert-table .alert-trend td{color:var(--info)}
+
+/* 阈值设置 */
+.threshold-row{display:flex;gap:16px;padding:12px 14px;background:#fff}
+.threshold-row label{font-size:12px;color:#555;display:flex;align-items:center;gap:6px}
+.threshold-input{width:60px;padding:5px 8px;border:0.5px solid #ddd;border-radius:6px;font-size:12px;text-align:center}
+
+/* 搜索 */
+.search-input{flex:1;padding:6px 10px;border:0.5px solid #ddd;border-radius:6px;font-size:12px;min-width:120px}
+
+/* 明细状态 */
+.status-inspected{color:var(--danger);font-weight:500}
+.status-normal{color:#888}
+
+/* Loading */
+.loading-mask{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.loading-spinner{width:36px;height:36px;border:3px solid #e8f7ef;border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite}
+.loading-text{margin-top:10px;font-size:13px;color:#555}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Footer */
+.footer-space{height:24px}
+
+/* 响应式适配 */
+@media (max-width:400px){
+  .kpi-num{font-size:17px}
+  .kpi-label{font-size:10px}
+  .chart-container{height:280px}
+}

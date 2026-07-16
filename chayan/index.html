@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>查验率监控</title>
+<!-- CDN 依赖 -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="chayan.css">
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <h1>查验率监控</h1>
+      <span class="date-bar" id="headerDate"></span>
+    </div>
+    <div class="sub-title">以发货日为基准 · 回溯归集 · 成熟期标记</div>
+  </div>
+
+  <!-- Tab 导航 -->
+  <div class="tab-bar">
+    <div class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">总览</div>
+    <div class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</div>
+    <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
+    <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
+  </div>
+
+  <!-- 上传面板（全屏覆盖，上传后隐藏） -->
+  <div id="uploadPanel" class="upload-panel">
+    <div class="upload-card">
+      <div class="upload-icon">📊</div>
+      <div class="upload-title">上传产品跟踪表</div>
+      <div class="upload-desc">请上传 <b>0715 产品跟踪表-合并.xlsx</b> 或最新跟踪表<br>支持拖拽或点击选择</div>
+      <div class="upload-zone" id="dropZone">
+        <div>📁 点击或拖拽文件到此处</div>
+        <div class="upload-hint">仅支持 .xlsx 格式</div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
+      <div class="upload-note">
+        <b>统计口径：</b>以发货日(T列)为基准，票数按B列主出仓单号换行分割。<br>
+        查验判定以Q列状态备注为金标准（含"国内查验"/"国外查验"）。<br>
+        最近30天数据标记为<span class="tag-mature">未成熟</span>（目的港查验滞后）。
+      </div>
+    </div>
+  </div>
+
+  <!-- 主内容区（上传后显示） -->
+  <div id="mainContent" style="display:none">
+
+    <!-- ===== 总览 ===== -->
+    <div id="pane-dashboard" class="tab-pane active">
+      <!-- KPI 卡片 -->
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-num" id="kpiTotal">--</div>
+          <div class="kpi-label">总发货票数</div>
+        </div>
+        <div class="kpi-card kpi-domestic">
+          <div class="kpi-num" id="kpiDomestic">--</div>
+          <div class="kpi-label">起运港查验率</div>
+        </div>
+        <div class="kpi-card kpi-foreign">
+          <div class="kpi-num" id="kpiForeign">--</div>
+          <div class="kpi-label">目的港查验率</div>
+        </div>
+        <div class="kpi-card kpi-overall">
+          <div class="kpi-num" id="kpiOverall">--</div>
+          <div class="kpi-label">综合查验率</div>
+        </div>
+      </div>
+
+      <!-- 粒度切换 -->
+      <div class="granularity-bar">
+        <span class="granularity-btn active" data-granularity="week">周度</span>
+        <span class="granularity-btn" data-granularity="month">月度</span>
+      </div>
+
+      <!-- 趋势图 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📈 查验率趋势</div>
+          <span class="section-note">最近30天标记为未成熟</span>
+        </div>
+        <div class="chart-container" id="trendChart"></div>
+      </div>
+    </div>
+
+    <!-- ===== 渠道分析 ===== -->
+    <div id="pane-channel" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🏭 渠道大类查验率 Top20</div>
+        </div>
+        <div class="chart-container" id="channelChart"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🚢 美国海运子渠道</div>
+        </div>
+        <div class="chart-container" id="usSubChart"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📋 素芸物流渠道明细</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="channelTable"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 代理分析 ===== -->
+    <div id="pane-agent" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🏢 代理查验率 Top20</div>
+        </div>
+        <div class="chart-container" id="agentChart"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🔥 代理 × 渠道热力图</div>
+        </div>
+        <div class="chart-container" id="agentChannelHeatmap" style="height:380px"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📋 代理查验明细</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="agentTable"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 预警与明细 ===== -->
+    <div id="pane-alert" class="tab-pane">
+      <!-- 阈值设置 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">⚠️ 预警阈值设置</div>
+        </div>
+        <div class="threshold-row">
+          <label>高风险阈值：<input type="number" id="highRiskInput" class="threshold-input" step="0.1">%</label>
+          <label>中风险阈值：<input type="number" id="midRiskInput" class="threshold-input" step="0.1">%</label>
+        </div>
+      </div>
+
+      <!-- 预警列表 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🚨 风险预警列表</div>
+          <span class="section-note">仅基于成熟数据</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table alert-table">
+            <thead><tr><th>级别</th><th>类别</th><th>名称</th><th>查验率</th><th>票数/变化</th></tr></thead>
+            <tbody id="alertTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 产品属性 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📦 产品属性查验率</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="productTable"></table>
+        </div>
+      </div>
+
+      <!-- 客户 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">👤 客户查验率</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="customerTable"></table>
+        </div>
+      </div>
+
+      <!-- 明细搜索 -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🔍 订单明细</div>
+          <input type="text" id="detailSearch" class="search-input" placeholder="搜索单号/代理/渠道/国家...">
+        </div>
+        <div class="table-wrap" style="max-height:400px;overflow:auto">
+          <table class="data-table detail-table">
+            <thead><tr><th>单号</th><th>发货日期</th><th>国家</th><th>类型</th><th>渠道</th><th>代理</th><th>素芸渠道</th><th>查验状态</th></tr></thead>
+            <tbody id="detailTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-space"></div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loadingMask" class="loading-mask" style="display:none">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">数据处理中...</div>
+</div>
+
+<script src="chayan.js"></script>
+<script>
+// 初始化日期显示
+(function(){
+  const d = new Date();
+  const wds = ['周日','周一','周二','周三','周四','周五','周六'];
+  document.getElementById('headerDate').textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
+})();
+</script>
+</body>
+</html>
