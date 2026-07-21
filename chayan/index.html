@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>查验率监控</title>
+<title>物流运营监控</title>
 <!-- CDN 依赖 -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -14,27 +14,30 @@
   <!-- Header -->
   <div class="header">
     <div class="header-top">
-      <h1>查验率监控</h1>
+      <h1>物流运营监控</h1>
       <span class="date-bar" id="headerDate"></span>
     </div>
-    <div class="sub-title">以发货日为基准 · 全量数据 · 周环比追踪</div>
+    <div class="sub-title">在途 · 时效 · 异常 · 查验 · 渠道占比 · 预警</div>
   </div>
 
   <!-- Tab 导航 -->
   <div class="tab-bar">
-    <div class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">总览</div>
+    <!-- ═══ 日度监控（总览） ═══ -->
+    <div class="tab-btn active" data-tab="d_overview" onclick="switchTab('d_overview')">日度总览</div>
+    <div class="tab-btn" data-tab="d_intransit" onclick="switchTab('d_intransit')">在途</div>
+    <div class="tab-btn" data-tab="d_sla" onclick="switchTab('d_sla')">时效SLA</div>
+    <div class="tab-btn" data-tab="d_abnormal" onclick="switchTab('d_abnormal')">异常</div>
+    <div class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">渠道占比</div>
+    <div class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</div>
+    <div class="tab-sep"></div>
+    <!-- ═══ 查验监控（明细） ═══ -->
+    <div class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">查验总览</div>
     <div class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</div>
     <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
     <div class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</div>
     <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
-    <div class="tab-sep"></div>
-    <div class="tab-btn" data-tab="d_overview" onclick="switchTab('d_overview')">日度总览</div>
-    <div class="tab-btn" data-tab="d_intransit" onclick="switchTab('d_intransit')">在途</div>
-    <div class="tab-btn" data-tab="d_sla" onclick="switchTab('d_sla')">时效SLA</div>
-    <div class="tab-btn" data-tab="d_abnormal" onclick="switchTab('d_abnormal')">异常</div>
-    <div class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">成本</div>
-    <div class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</div>
     <button class="export-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
+    <button class="export-btn" id="shareBtn" onclick="generateShareLink()" style="display:none">🔗 分享链接</button>
   </div>
 
   <!-- 上传面板（全屏覆盖，上传后隐藏） -->
@@ -61,8 +64,8 @@
   <!-- 主内容区（上传后显示） -->
   <div id="mainContent" style="display:none">
 
-    <!-- ===== 总览 ===== -->
-    <div id="pane-dashboard" class="tab-pane active">
+    <!-- ===== 总览（查验） ===== -->
+    <div id="pane-dashboard" class="tab-pane">
       <!-- KPI 卡片 -->
       <div class="kpi-row">
         <div class="kpi-card">
@@ -328,10 +331,17 @@
 
     <!-- ===== 日度监控：时效 SLA ===== -->
     <div id="pane-d_sla" class="tab-pane">
+      <div class="sla-period-bar">
+        <span class="sla-note-label">数据范围：</span>
+        <span class="sla-period-btn active" data-period="all" onclick="Daily.setSlaPeriod('all')">全量</span>
+        <span class="sla-period-btn" data-period="halfmonth" onclick="Daily.setSlaPeriod('halfmonth')">近半月</span>
+        <span class="sla-period-btn" data-period="month" onclick="Daily.setSlaPeriod('month')">近一月</span>
+        <span class="sla-period-btn" data-period="twomonth" onclick="Daily.setSlaPeriod('twomonth')">近两月</span>
+      </div>
       <div class="section">
         <div class="section-header">
-          <div class="section-title">⏱️ 各渠道时效 SLA（已签收单）</div>
-          <span class="section-note">平均实际时效 = 实际签收−仓库出货；超时 = 实际签收 &gt; 物流最晚送达</span>
+          <div class="section-title">⏱️ 各渠道大类时效 SLA（已签收单，剔除异常）</div>
+          <span class="section-note">平均实际时效 = 签收−仓库出货；建议时效 = P90 + 超区间平均超出；参考时效 = Z列原值</span>
         </div>
         <div class="chart-container" id="sla-chart"></div>
       </div>
@@ -352,13 +362,12 @@
       </div>
     </div>
 
-    <!-- ===== 日度监控：成本速览（渠道结构） ===== -->
+    <!-- ===== 日度监控：渠道占比 ===== -->
     <div id="pane-d_cost" class="tab-pane">
       <div class="cost-bar">
         <span class="cost-dim-btn active" data-dim="week" onclick="Daily.setCostDim('week')">周</span>
         <span class="cost-dim-btn" data-dim="month" onclick="Daily.setCostDim('month')">月</span>
-        <span class="cost-dim-btn" data-dim="customer" onclick="Daily.setCostDim('customer')">客户</span>
-        <span class="cost-dim-btn" data-dim="product" onclick="Daily.setCostDim('product')">产品属性</span>
+        <span class="cost-dim-btn" data-dim="customer" onclick="Daily.setCostDim('customer')">客户(事业部)</span>
         <span class="cost-sep"></span>
         <span class="cost-metric-btn active" data-metric="tickets" onclick="Daily.setCostMetric('tickets')">票数</span>
         <span class="cost-metric-btn" data-metric="weight" onclick="Daily.setCostMetric('weight')">吨数</span>
@@ -387,7 +396,7 @@
       <div class="section">
         <div class="section-header">
           <div class="section-title">📅 明日到港 / 清关 / 派送 预警</div>
-          <span class="section-note">解析状态备注里程碑日期，==次日则预警；单票多里程碑以"派送"为核心</span>
+          <span class="section-note">解析状态备注里程碑日期，==次日则预警；单票多里程碑以<b>最新(日期最大)</b>里程碑为核心</span>
         </div>
         <div id="tm-mile"></div>
       </div>

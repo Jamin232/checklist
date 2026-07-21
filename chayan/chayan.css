@@ -201,3 +201,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .mile-title{font-size:12px;font-weight:600;color:#333;margin-bottom:6px}
 .mile-item{display:flex;justify-content:space-between;font-size:12px;color:#555;padding:3px 0;border-bottom:0.5px dashed #eee}
 .mile-item span{font-weight:600;color:var(--primary-dark)}
+
+/* SLA 时间维度选择器 */
+.sla-period-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
+.sla-note-label{font-size:12px;color:#888;font-weight:500}
+.sla-period-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
+.sla-period-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
+
+/* 明日预警 梯度卡片（独立区块） */
+.tm-tier-group{display:flex;flex-direction:column;gap:14px;padding:6px 14px 14px}
+.tm-tier-block{border:0.5px solid #eee;border-radius:10px;overflow:hidden;background:#fff}
+.tm-tier-header{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px}
+.tm-tier-header.tier-10{background:#fef2f2;border-left:4px solid var(--danger)}
+.tm-tier-header.tier-7{background:#fff8f0;border-left:4px solid #e67e22}
+.tm-tier-header.tier-5{background:#fffbef;border-left:4px solid var(--warning)}
+.tm-tier-title{font-weight:700;font-size:15px;min-width:52px}
+.tm-tier-count{color:#444;margin-left:auto}
+.tm-tier-desc{font-size:11px;color:#999}

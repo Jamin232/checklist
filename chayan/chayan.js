@@ -579,6 +579,10 @@ async function loadAndProcess(file, fileDate) {
     if (uploadPanel) uploadPanel.style.display = 'none';
     if (mainContent) mainContent.style.display = 'block';
 
+    // 显示分享链接按钮
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) shareBtn.style.display = '';
+
     // 填充下钻下拉选项
     const ddSelect = document.getElementById('drilldownSelect');
     if (ddSelect) {
@@ -1550,7 +1554,155 @@ function exportToExcel() {
   XLSX.writeFile(wb, `查验率统计_${srcName}_${ds}.xlsx`);
 }
 
-// ===================== 事件绑定 =====================
+// ===================== 分享链接（领导免上传） =====================
+
+// 收集当前所有 Tab 的聚合数据快照
+function collectSnapshot() {
+  const snap = {
+    v: 1, // 快照版本
+    date: document.getElementById('headerDate')?.textContent || '',
+    // 查验 KPI
+    inspection: {
+      kpiTotal: document.getElementById('kpiTotal')?.textContent || '',
+      kpiDomestic: document.getElementById('kpiDomestic')?.textContent || '',
+      kpiForeign: document.getElementById('kpiForeign')?.textContent || '',
+      kpiOverall: document.getElementById('kpiOverall')?.textContent || '',
+      kpiWeekRate: document.getElementById('kpiWeekRate')?.textContent || '',
+      kpiWeekTotal: document.getElementById('kpiWeekTotal')?.textContent || ''
+    },
+    // 日度总览
+    overview: { html: document.getElementById('ov-cards')?.innerHTML || '', extra: document.getElementById('ov-extra')?.innerHTML || '' },
+    // 在途
+    intransit: {
+      summary: document.getElementById('it-summary')?.innerHTML || '',
+      channelBody: document.getElementById('it-channelBody')?.innerHTML || '',
+      agentBody: document.getElementById('it-agentBody')?.innerHTML || '',
+      custBody: document.getElementById('it-custBody')?.innerHTML || ''
+    },
+    // SLA
+    sla: {
+      chart: document.getElementById('sla-chart')?.getAttribute('_data') || '',
+      table: document.getElementById('sla-table')?.innerHTML || ''
+    },
+    // 异常
+    abnormal: {
+      cards: document.getElementById('ab-cards')?.innerHTML || '',
+      table: document.getElementById('ab-table')?.innerHTML || ''
+    },
+    // 渠道占比
+    cost: {
+      chart: document.getElementById('cost-chart')?.getAttribute('_data') || '',
+      table: document.getElementById('cost-table')?.innerHTML || '',
+      note: document.getElementById('cost-note')?.innerHTML || ''
+    },
+    // 明日预警
+    tomorrow: {
+      overdue: document.getElementById('tm-overdue')?.innerHTML || '',
+      mile: document.getElementById('tm-mile')?.innerHTML || ''
+    }
+  };
+  return snap;
+}
+
+// Base64 编码（URL-safe，无 padding）
+function b64Encode(str) {
+  try {
+    return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch(e) { return ''; }
+}
+function b64Decode(s) {
+  try {
+    return decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+  } catch(e) { return null; }
+}
+
+function generateShareLink() {
+  const snap = collectSnapshot();
+  const json = JSON.stringify(snap);
+  // 如果数据过大（>4KB），只保留核心KPI
+  let payload = json;
+  if (payload.length > 4000) {
+    snap.overview.html = '';
+    snap.intransit.channelBody = '';
+    snap.intransit.agentBody = '';
+    snap.intransit.custBody = '';
+    snap.sla.table = '';
+    snap.abnormal.table = '';
+    snap.cost.table = '';
+    snap.tomorrow.overdue = '';
+    snap.tomorrow.mile = '';
+    payload = JSON.stringify(snap);
+  }
+  const hash = '#' + b64Encode(payload);
+  const url = location.protocol + '//' + location.host + location.pathname + hash;
+  // 复制到剪贴板
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('✓ 分享链接已复制到剪贴板！发送给领导即可直接查看结果。', 'success');
+  }).catch(() => {
+    alert('分享链接：\n' + url + '\n\n请手动复制发送给领导');
+  });
+}
+
+// 页面加载时检测 Hash 自动渲染
+function tryLoadFromHash() {
+  const h = location.hash.slice(1);
+  if (!h || h.length < 10) return false; // 太短不是有效数据
+  const json = b64Decode(h);
+  if (!json) return false;
+  let snap;
+  try { snap = JSON.parse(json); } catch(e) { return false; }
+  if (!snap || !snap.v) return false;
+
+  // 隐藏上传面板，显示主内容
+  const up = document.getElementById('uploadPanel');
+  const mc = document.getElementById('mainContent');
+  if (up) up.style.display = 'none';
+  if (mc) mc.style.display = 'block';
+
+  // 恢复日期
+  if (snap.date) {
+    const el = document.getElementById('headerDate');
+    if (el) el.textContent = snap.date;
+  }
+
+  // 注入各 Tab HTML
+  const injections = [
+    ['ov-cards', snap.overview?.html],
+    ['ov-extra', snap.overview?.extra],
+    ['it-summary', snap.intransit?.summary],
+    ['it-channelBody', snap.intransit?.channelBody],
+    ['it-agentBody', snap.intransit?.agentBody],
+    ['it-custBody', snap.intransit?.custBody],
+    ['ab-cards', snap.abnormal?.cards],
+    ['ab-table', snap.abnormal?.table],
+    ['sla-table', snap.sla?.table],
+    ['cost-note', snap.cost?.note],
+    ['cost-table', snap.cost?.table],
+    ['tm-overdue', snap.tomorrow?.overdue],
+    ['tm-mile', snap.tomorrow?.mile]
+  ];
+  for (const [id, html] of injections) {
+    if (html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+  }
+
+  // 恢复查验 KPI
+  if (snap.inspection) {
+    const ins = snap.inspection;
+    if (ins.kpiTotal) { const e = document.getElementById('kpiTotal'); if (e) e.textContent = ins.kpiTotal; }
+    if (ins.kpiDomestic) { const e = document.getElementById('kpiDomestic'); if (e) e.textContent = ins.kpiDomestic; }
+    if (ins.kpiForeign) { const e = document.getElementById('kpiForeign'); if (e) e.textContent = ins.kpiForeign; }
+    if (ins.kpiOverall) { const e = document.getElementById('kpiOverall'); if (e) e.textContent = ins.kpiOverall; }
+    if (ins.kpiWeekRate) { const e = document.getElementById('kpiWeekRate'); if (e) e.textContent = ins.kpiWeekRate; }
+    if (ins.kpiWeekTotal) { const e = document.getElementById('kpiWeekTotal'); if (e) e.textContent = ins.kpiWeekTotal; }
+  }
+
+  // 显示分享按钮（领导也可以再转发）
+  const sb = document.getElementById('shareBtn');
+  if (sb) sb.style.display = '';
+
+  showToast(`📋 已加载分享结果（数据日期：${snap.date || '未知'}）`, 'success');
+  return true;
+}
 
 function initEvents() {
   // 文件上传（支持多选：按文件名日期自动区分今日/昨日）
@@ -1701,6 +1853,8 @@ function switchTab(tabName) {
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', () => {
+  // 优先尝试从分享链接加载（领导免上传）
+  if (tryLoadFromHash()) return;
   initEvents();
   // 默认显示上传页面，等待用户上传数据
 });

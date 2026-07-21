@@ -11,6 +11,7 @@ const Daily = (function () {
   let todayDate = null;     // 今日表文件名解析出的日期（用于"当日新增查验"基准）
   let yesterdayDate = null; // 昨日表文件名解析出的日期
   let _inited = false;
+  let slaPeriod = 'all'; // 'all' | 'halfmonth' | 'month' | 'twomonth'
 
   let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
   function computeToday(date) {
@@ -166,6 +167,8 @@ const Daily = (function () {
         tickets, ticketCount,
         type: safeStr(row[map.type]),
         logisticChannel: safeStr(row[map.logi]),
+        // 渠道大类 = 国家 + 类型（与查验看板口径一致）
+        channelCategory: (safeStr(row[map.country]) || '') + (safeStr(row[map.type]) || '') || undefined,
         agent: safeStr(row[map.agent]),
         agentChannel: safeStr(row[map.agentCh]),
         customer: safeStr(row[map.cust]),
@@ -367,13 +370,23 @@ const Daily = (function () {
     return s[idx];
   }
 
+  function setSlaPeriod(p) { slaPeriod = p; document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p)); renderSLA(); }
+
   function renderSLA() {
     if (!todayRecs) { noData('sla-chart'); noData('sla-table'); return; }
+    // 时间过滤
+    let pool = todayRecs;
+    if (slaPeriod !== 'all' && TODAY) {
+      const days = { halfmonth: 15, month: 30, twomonth: 60 }[slaPeriod] || 99999;
+      const cutoff = new Date(TODAY);
+      cutoff.setUTCDate(cutoff.getUTCDate() - days);
+      pool = todayRecs.filter(r => r.shipDate && r.shipDate >= cutoff);
+    }
     // 同事原算法：剔除异常单（查验/开查/索赔/赔付），仅用正常已签收单推导时效基线
-    const normalSigned = todayRecs.filter(r => !r.inTransit && !r.isAbnormal && r.shipDate && r.signTime);
+    const normalSigned = pool.filter(r => !r.inTransit && !r.isAbnormal && r.shipDate && r.signTime);
     const byCh = {};
     for (const r of normalSigned) {
-      const k = r.logisticChannel || '未知';
+      const k = r.channelCategory || r.logisticChannel || '未知';
       if (!byCh[k]) byCh[k] = { leads: [], refLeads: [] };
       byCh[k].leads.push(Math.round(dayDiff(r.signTime, r.shipDate))); // 总时效=签收-仓库出货
       if (r.refLead > 0) byCh[k].refLeads.push(r.refLead);
@@ -390,22 +403,22 @@ const Daily = (function () {
       const over = v.leads.filter(l => l > suggested).length;
       const rate = n ? (n - over) / n * 100 : 0;            // SLA达成率（以建议时效为承诺基线）
       return { key: k, n, avgLead, p90, suggested, refAvg, over, rate, small: n < MIN_SAMPLE };
-    }).sort((a, b) => b.n - a.n).slice(0, 15);
+    }).sort((a, b) => b.n - a.n).slice(0, 20);
 
     // 图表：平均实际时效 / 建议时效 / 参考时效（柱）+ SLA达成率（线，次轴）
     setOpt('sla-chart', {
       tooltip: { trigger: 'axis' },
-      legend: { data: ['平均实际时效', '建议时效', '参考时效', 'SLA达成率'], bottom: 0 },
-      grid: { left: 50, right: 50, top: 20, bottom: 50 },
+      legend: { data: ['平均实际时效(天)', '建议时效(天)', '参考时效(Z列)', 'SLA达成率'], bottom: 0 },
+      grid: { left: 50, right: 55, top: 25, bottom: 55 },
       xAxis: { type: 'category', data: arr.map(x => x.key), axisLabel: { interval: 0, rotate: 30, fontSize: 10 } },
       yAxis: [
         { type: 'value', name: '天' },
         { type: 'value', name: '%', max: 100, axisLabel: { formatter: '{value}%' } }
       ],
       series: [
-        { name: '平均实际时效', type: 'bar', data: arr.map(x => +x.avgLead.toFixed(1)), itemStyle: { color: '#2b6cb0' } },
-        { name: '建议时效', type: 'bar', data: arr.map(x => +x.suggested.toFixed(1)), itemStyle: { color: '#38a169' } },
-        { name: '参考时效', type: 'bar', data: arr.map(x => +x.refAvg.toFixed(1)), itemStyle: { color: '#e08e0b' } },
+        { name: '平均实际时效(天)', type: 'bar', data: arr.map(x => +x.avgLead.toFixed(1)), itemStyle: { color: '#2b6cb0' } },
+        { name: '建议时效(天)', type: 'bar', data: arr.map(x => +x.suggested.toFixed(1)), itemStyle: { color: '#38a169' } },
+        { name: '参考时效(Z列)', type: 'bar', data: arr.map(x => +x.refAvg.toFixed(1)), itemStyle: { color: '#e08e0b' } },
         { name: 'SLA达成率', type: 'line', yAxisIndex: 1, data: arr.map(x => +x.rate.toFixed(1)), itemStyle: { color: '#d53f8c' }, symbolSize: 7 }
       ]
     });
@@ -413,13 +426,14 @@ const Daily = (function () {
     // 表格
     const tb = document.getElementById('sla-table');
     if (tb) {
-      tb.innerHTML = `<tr><th>素芸物流渠道</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
+      const dimLabel = slaPeriod === 'all' ? '全量' : { halfmonth: '近半月', month: '近一月', twomonth: '近两月' }[slaPeriod];
+      tb.innerHTML = `<tr><th>渠道大类</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
         arr.map(x => {
           const rc = x.rate >= 90 ? 'rate-good' : (x.rate >= 80 ? 'rate-mid' : 'rate-bad');
           return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg.toFixed(1) : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
         }).join('') +
         `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${normalSigned.length}</td><td colspan="5"></td></tr>` +
-        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = 90%置信时效(P90) + 超区间单平均超出天数（已剔除查验等异常单）；以此作为该渠道SLA承诺基线，达成率=实际≤建议时效占比</td></tr>`;
+        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = P90(90%置信区间上限) + 超区间单平均超出天数（已剔除查验/索赔/赔付等异常单）。<br>含义：若将此渠道的参考时效设为"建议时效"，则约 ${arr.length > 0 ? Math.round(arr.filter(x=>x.rate>=90).length/arr.length*100) : 0}% 的渠道可达90%+达成率。<br>数据范围：${dimLabel} | 时效=实际签收时间−仓库出货日期</td></tr>`;
     }
   }
 
@@ -452,14 +466,15 @@ const Daily = (function () {
       `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">当日新增查验(${fmtMD(TODAY)})</div></div>` +
       deltaHtml;
 
-    // 明细表（异常单）
+    // 明细表（异常单）— 显示分出仓单号
     const tb = document.getElementById('ab-table');
     if (tb) {
       const rows = abnormal.slice(0, 300).map(r => {
         const t = r.isInspecting ? '查验中' : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常');
-        return `<tr><td>${r.mainTicket}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.customer}</td><td>${r.country}</td><td class="status-inspected">${t}</td><td>${r.goodsStatus}</td></tr>`;
+        const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
+        return `<tr><td>${ticketDisplay}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.customer}</td><td>${r.country}</td><td class="status-inspected">${t}</td><td>${r.goodsStatus}</td></tr>`;
       }).join('');
-      tb.innerHTML = `<tr><th>主单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr>` + (rows || '<tr><td colspan="7" style="text-align:center;color:#999">无异常单</td></tr>');
+      tb.innerHTML = `<tr><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr>` + (rows || '<tr><td colspan="7" style="text-align:center;color:#999">无异常单</td></tr>');
     }
   }
 
@@ -475,8 +490,7 @@ const Daily = (function () {
     const dimFn = {
       week: r => r.shipDate ? getWeekKey(r.shipDate) : '未知',
       month: r => r.shipDate ? fmtYM(r.shipDate) : '未知',
-      customer: r => r.customer || '未知',
-      product: r => r.productAttr || '未知'
+      customer: r => r.customer || '未知'
     }[costDim];
     const metricFn = {
       tickets: r => r.ticketCount,
@@ -485,22 +499,23 @@ const Daily = (function () {
     }[costMetric];
     const metricName = { tickets: '票数', weight: '吨数', volume: '方数' }[costMetric];
 
-    const byCh = groupSum(todayRecs, r => r.logisticChannel);
-    // 维度拆分：每个维度值下，各渠道的 metric 占比
+    // 按渠道大类聚合（非素芸物流渠道）
+    const byCh = groupSum(todayRecs, r => r.channelCategory || '未知');
+    // 维度拆分：每个维度值下，各渠道大类的 metric 占比
     const dimMap = {};
     for (const r of todayRecs) {
       const dk = dimFn(r);
       if (!dk) continue;
       if (!dimMap[dk]) dimMap[dk] = {};
-      const ck = r.logisticChannel || '未知';
+      const ck = r.channelCategory || '未知';
       dimMap[dk][ck] = (dimMap[dk][ck] || 0) + metricFn(r);
     }
-    // 仅展示占比 Top 渠道
+    // 仅展示占比 Top 渠道大类
     const chTotals = {};
     Object.values(dimMap).forEach(m => Object.entries(m).forEach(([ck, v]) => chTotals[ck] = (chTotals[ck] || 0) + v));
     const topCh = Object.entries(chTotals).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
 
-    // 饼图：全量渠道结构
+    // 饼图：全量渠道大类结构
     const pie = topCh.map(ck => ({ name: ck, value: +chTotals[ck].toFixed(1) }));
     const other = Object.entries(chTotals).filter(([ck]) => !topCh.includes(ck)).reduce((s, [, v]) => s + v, 0);
     if (other > 0) pie.push({ name: '其他', value: +other.toFixed(1) });
@@ -510,11 +525,11 @@ const Daily = (function () {
       series: [{ type: 'pie', radius: ['35%', '66%'], center: ['50%', '44%'], data: pie, label: { formatter: '{b}\n{c}' } }]
     });
 
-    // 表格：维度 × 渠道 占比
+    // 表格：维度 × 渠道大类 占比
     const tb = document.getElementById('cost-table');
     if (tb) {
       const dims = Object.keys(dimMap).sort();
-      let html = `<tr><th>${costDim === 'week' ? '周' : costDim === 'month' ? '月' : costDim === 'customer' ? '客户' : '产品属性'}</th>`;
+      let html = `<tr><th>${{ week: '周', month: '月', customer: '客户(事业部)' }[costDim]}</th>`;
       topCh.forEach(ck => html += `<th>${ck}</th>`);
       html += `<th>合计(${metricName})</th></tr>`;
       for (const dk of dims) {
@@ -536,8 +551,8 @@ const Daily = (function () {
       tb.innerHTML = html;
     }
     const note = document.getElementById('cost-note');
-    if (note) note.innerHTML = '⚠️ 跟踪表无运费数据，本模块仅展示<b>渠道结构占比</b>（按' + metricName + '），用以间接反映成本分布。维度：' +
-      ({ week: '周', month: '月', customer: '客户', product: '产品属性' }[costDim]);
+    if (note) note.innerHTML = '⚠️ 跟踪表无运费数据，本模块仅展示<b>渠道大类结构占比</b>（按' + metricName + '），用以间接反映成本分布。维度：' +
+      ({ week: '中国日历周', month: '月度', customer: '客户(事业部)' }[costDim]);
   }
 
   // ============================================================
@@ -572,24 +587,37 @@ const Daily = (function () {
   function renderTomorrow() {
     if (!todayRecs) { noData('tm-overdue'); noData('tm-mile'); return; }
 
-    // Part A：在途超期（按梯度）
+    // Part A：在途超期（按梯度）— 每个梯度独立展示，Tab式分离
     const tiers = [
-      { key: '>10天', test: d => d > 10 },
-      { key: '>7天', test: d => d > 7 },
-      { key: '>5天', test: d => d > 5 }
+      { key: '≥10天', test: d => d >= 10, cls: 'tier-10', desc: '严重超期，需立即跟进' },
+      { key: '≥7天', test: d => d >= 7 && d < 10, cls: 'tier-7', desc: '明显超期，关注处理' },
+      { key: '>5天', test: d => d > 5 && d < 7, cls: 'tier-5', desc: '轻度超期，持续观察' }
     ];
     const list = todayRecs.filter(r => r.inTransit && r.latestDeliver);
     const overdueRows = list.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
 
-    let oh = '<div class="tier-row">';
-    tiers.forEach(t => {
-      const n = overdueRows.filter(x => t.test(x.d)).length;
-      oh += `<div class="tier-badge ${t.key === '>10天' ? 'tier-10' : t.key === '>7天' ? 'tier-7' : 'tier-5'}">${t.key}：<b>${n}</b> 单未妥投</div>`;
-    });
+    // 构建每个梯度的独立卡片+表格
+    let oh = '<div class="tm-tier-group">';
+    for (const t of tiers) {
+      const rows = overdueRows.filter(x => t.test(x.d)).sort((a, b) => b.d - a.d).slice(0, 100);
+      oh += `<div class="tm-tier-block">
+        <div class="tm-tier-header ${t.cls}"><span class="tm-tier-title">${t.key}</span><span class="tm-tier-count">${rows.length} 单未妥投</span><span class="tm-tier-desc">${t.desc}</span></div>
+        <div class="table-wrap" style="max-height:${rows.length > 8 ? 240 : 'auto'}px;overflow:auto">
+          <table class="data-table">
+            <thead><tr><th>分出仓单号</th><th>渠道大类</th><th>代理</th><th>客户</th><th>超期天数</th><th>最晚送达</th></tr></thead>
+            <tbody>${rows.length ? rows.map(x => `<tr>
+              <td>${x.r.tickets.length > 1 ? x.r.tickets.slice(0, 2).join('<br>') + '<br><span style="color:#888;font-size:10px">+' + (x.r.tickets.length - 2) + '更多</span>' : (x.r.tickets[0] || x.r.mainTicket)}</td>
+              <td>${x.r.channelCategory || x.r.logisticChannel}</td>
+              <td>${x.r.agent}</td>
+              <td>${x.r.customer}</td>
+              <td class="rate-bad">${x.d}天</td>
+              <td>${fmtDate(x.r.latestDeliver)}</td>
+            </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:#999">无</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
     oh += '</div>';
-    oh += '<div class="table-wrap" style="max-height:340px;overflow:auto"><table class="data-table"><thead><tr><th>主单号</th><th>渠道</th><th>代理</th><th>客户</th><th>超期天数</th><th>最晚送达</th></tr></thead><tbody>' +
-      overdueRows.sort((a, b) => b.d - a.d).slice(0, 200).map(x => `<tr><td>${x.r.mainTicket}</td><td>${x.r.logisticChannel}</td><td>${x.r.agent}</td><td>${x.r.customer}</td><td class="rate-bad">${x.d}天</td><td>${fmtDate(x.r.latestDeliver)}</td></tr>`).join('') +
-      '</tbody></table></div>';
     document.getElementById('tm-overdue').innerHTML = oh;
 
     // Part B：明日到港/清关/派送
@@ -629,7 +657,7 @@ const Daily = (function () {
   // ---------------- 对外接口 ----------------
   return {
     setData, setYesterday, init,
-    setCostDim, setCostMetric,
+    setCostDim, setCostMetric, setSlaPeriod,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow
   };
 })();
