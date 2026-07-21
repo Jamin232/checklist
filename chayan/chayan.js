@@ -156,10 +156,17 @@ function processData(rows) {
     // 将新的分出仓单号加入全局去重
     tickets.forEach(t => seenSubTickets.add(t));
 
-    // Q列 状态备注 -> 查验判定（金标准）
+    // 查验判定：Q列 状态备注 为金标准 + 时间列补充判定
     const remark = safeStr(row['状态备注']);
-    const isDomestic = remark.includes('国内查验');
-    const isForeign = remark.includes('国外查验');
+    let isDomestic = remark.includes('国内查验');
+    let isForeign = remark.includes('国外查验');
+
+    // 补充判定：若状态备注未标记但时间列有值（日期/数字），仍视为查验
+    const destInspectTimeRaw = safeStr(row['目的地查验时间']);
+    const domInspectTimeRaw = safeStr(row['国内查验时间']);
+    if (!isDomestic && domInspectTimeRaw.trim() !== '') isDomestic = true;
+    if (!isForeign && destInspectTimeRaw.trim() !== '') isForeign = true;
+
     const isInspected = isDomestic || isForeign;
 
     // G列 国家 -> 映射
