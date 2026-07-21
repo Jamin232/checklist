@@ -27,6 +27,13 @@
     <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
     <div class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</div>
     <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
+    <div class="tab-sep"></div>
+    <div class="tab-btn" data-tab="d_overview" onclick="switchTab('d_overview')">日度总览</div>
+    <div class="tab-btn" data-tab="d_intransit" onclick="switchTab('d_intransit')">在途</div>
+    <div class="tab-btn" data-tab="d_sla" onclick="switchTab('d_sla')">时效SLA</div>
+    <div class="tab-btn" data-tab="d_abnormal" onclick="switchTab('d_abnormal')">异常</div>
+    <div class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">成本</div>
+    <div class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</div>
     <button class="export-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
   </div>
 
@@ -53,6 +60,13 @@
 
   <!-- 主内容区（上传后显示） -->
   <div id="mainContent" style="display:none">
+
+    <!-- 昨日表工具条（异常监控"较昨日变动"用） -->
+    <div class="daily-toolbar">
+      <span class="dt-label">昨日表（可选，用于异常较昨日变动）：</span>
+      <input type="file" id="fileInputY" accept=".xlsx">
+      <span id="yesterdayStatus" class="dt-hint">未载入</span>
+    </div>
 
     <!-- ===== 总览 ===== -->
     <div id="pane-dashboard" class="tab-pane active">
@@ -290,6 +304,102 @@
       </div>
     </div>
 
+    <!-- ===== 日度监控：总览 ===== -->
+    <div id="pane-d_overview" class="tab-pane">
+      <div class="kpi-row" id="ov-cards"></div>
+      <div id="ov-extra"></div>
+    </div>
+
+    <!-- ===== 日度监控：在途概览 ===== -->
+    <div id="pane-d_intransit" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🚢 在途运输方式构成</div>
+          <span class="section-note" id="it-summary"></span>
+        </div>
+        <div class="chart-container" id="it-transitChart"></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">🏭 在途 · 按素芸物流渠道</div></div>
+        <div class="table-wrap"><table class="data-table" id="it-channelBody"></table></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">🏢 在途 · 按代理</div></div>
+        <div class="table-wrap"><table class="data-table" id="it-agentBody"></table></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">👤 在途 · 按客户</div></div>
+        <div class="table-wrap"><table class="data-table" id="it-custBody"></table></div>
+      </div>
+    </div>
+
+    <!-- ===== 日度监控：时效 SLA ===== -->
+    <div id="pane-d_sla" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">⏱️ 各渠道时效 SLA（已签收单）</div>
+          <span class="section-note">平均实际时效 = 实际签收−仓库出货；超时 = 实际签收 &gt; 物流最晚送达</span>
+        </div>
+        <div class="chart-container" id="sla-chart"></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">📋 渠道 SLA 明细</div></div>
+        <div class="table-wrap"><table class="data-table" id="sla-table"></table></div>
+      </div>
+    </div>
+
+    <!-- ===== 日度监控：异常监控 ===== -->
+    <div id="pane-d_abnormal" class="tab-pane">
+      <div id="ab-cards"></div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">📋 异常单明细（查验中/开查中/索赔中/赔付中）</div></div>
+        <div class="table-wrap" style="max-height:420px;overflow:auto">
+          <table class="data-table"><tbody id="ab-table"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 日度监控：成本速览（渠道结构） ===== -->
+    <div id="pane-d_cost" class="tab-pane">
+      <div class="cost-bar">
+        <span class="cost-dim-btn active" data-dim="week" onclick="Daily.setCostDim('week')">周</span>
+        <span class="cost-dim-btn" data-dim="month" onclick="Daily.setCostDim('month')">月</span>
+        <span class="cost-dim-btn" data-dim="customer" onclick="Daily.setCostDim('customer')">客户</span>
+        <span class="cost-dim-btn" data-dim="product" onclick="Daily.setCostDim('product')">产品属性</span>
+        <span class="cost-sep"></span>
+        <span class="cost-metric-btn active" data-metric="tickets" onclick="Daily.setCostMetric('tickets')">票数</span>
+        <span class="cost-metric-btn" data-metric="weight" onclick="Daily.setCostMetric('weight')">吨数</span>
+        <span class="cost-metric-btn" data-metric="volume" onclick="Daily.setCostMetric('volume')">方数</span>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">🥧 渠道结构占比</div></div>
+        <div class="chart-container" id="cost-chart"></div>
+        <div id="cost-note" class="ov-note"></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="section-title">📊 维度 × 渠道 占比</div></div>
+        <div class="table-wrap"><table class="data-table" id="cost-table"></table></div>
+      </div>
+    </div>
+
+    <!-- ===== 日度监控：明日预警 ===== -->
+    <div id="pane-d_tomorrow" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">⏰ 时效超期预警（在途未妥投，按超期梯度）</div>
+          <span class="section-note">超过 5 / 7 / 10 天仍未妥投的订单</span>
+        </div>
+        <div id="tm-overdue"></div>
+      </div>
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">📅 明日到港 / 清关 / 派送 预警</div>
+          <span class="section-note">解析状态备注里程碑日期，==次日则预警；单票多里程碑以"派送"为核心</span>
+        </div>
+        <div id="tm-mile"></div>
+      </div>
+    </div>
+
     <div class="footer-space"></div>
   </div>
 </div>
@@ -301,12 +411,14 @@
 </div>
 
 <script src="chayan.js"></script>
+<script src="daily.js"></script>
 <script>
 // 初始化日期显示
 (function(){
   const d = new Date();
   const wds = ['周日','周一','周二','周三','周四','周五','周六'];
   document.getElementById('headerDate').textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
+  if (window.Daily) Daily.init();
 })();
 </script>
 </body>

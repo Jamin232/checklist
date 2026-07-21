@@ -31,8 +31,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .sub-title{font-size:12px;opacity:.8;margin-top:2px}
 
 /* Tab 导航 */
-.tab-bar{display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:58px;z-index:9}
-.tab-btn{flex:1;text-align:center;padding:10px 4px;font-size:13px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;-webkit-tap-highlight-color:transparent}
+.tab-bar{display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:58px;z-index:9;overflow-x:auto}
+.tab-btn{flex:0 0 auto;text-align:center;padding:10px 10px;font-size:13px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;-webkit-tap-highlight-color:transparent;white-space:nowrap}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
 .export-btn{flex:0 0 auto;margin-left:auto;align-self:center;background:var(--primary);color:#fff;border:none;border-radius:15px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent}
 .export-btn:active{transform:scale(.96);opacity:.9}
@@ -143,3 +143,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .channel-tags{display:flex;flex-wrap:wrap;gap:6px}
 .channel-tag{padding:4px 10px;border-radius:12px;font-size:11px;background:#f0f0f0;color:#666;cursor:pointer;transition:all .15s;border:0.5px solid transparent;white-space:nowrap}
 .channel-tag.active{background:var(--primary);color:#fff;border-color:var(--primary-dark)}
+
+/* ===================== 日度监控看板样式 ===================== */
+/* Tab 分隔 */
+.tab-sep{width:1px;background:var(--border);margin:8px 4px;flex:0 0 auto}
+
+/* 昨日表工具条 */
+.daily-toolbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap;font-size:12px}
+.dt-label{color:#555;font-weight:500}
+.dt-hint{color:#999}
+#fileInputY{font-size:11px;max-width:200px}
+
+/* KPI 副标题 & 日度配色 */
+.kpi-sub{font-size:10px;color:#999;margin-top:2px}
+.ov-intransit .kpi-num{color:var(--info)}
+.ov-abn .kpi-num{color:var(--danger)}
+.ov-new .kpi-num{color:var(--warning)}
+.ov-overdue .kpi-num{color:#b45309}
+.ov-tom .kpi-num{color:var(--primary-dark)}
+
+/* 总览说明 & 变动 */
+.ov-note{font-size:11px;color:#888;padding:4px 14px 10px;line-height:1.6}
+.ov-delta{display:flex;gap:10px;flex-wrap:wrap;padding:8px 14px;background:#f8f9fb;border-radius:8px;margin:0 10px 10px}
+.ov-delta span{font-size:12px;color:#666}
+.ov-delta b{margin:0 3px}
+.up{color:var(--danger)} .down{color:var(--primary-dark)}
+
+/* 成本速览选择器 */
+.cost-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
+.cost-dim-btn,.cost-metric-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
+.cost-dim-btn.active,.cost-metric-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
+.cost-sep{width:1px;height:18px;background:#ddd;margin:0 4px}
+
+/* 占比百分比 */
+.pct{font-size:10px;color:#aaa}
+
+/* 评级颜色 */
+.rate-good{color:var(--primary-dark);font-weight:600}
+.rate-mid{color:var(--warning);font-weight:600}
+.rate-bad{color:var(--danger);font-weight:600}
+
+/* 异常卡 delta */
+.ab-delta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ab-delta-item{background:#f8f9fb;border-radius:8px;padding:6px 12px;font-size:12px;color:#666;display:flex;flex-direction:column;align-items:center}
+.ab-delta-item b{font-size:16px;margin:2px 0}
+
+/* 明日预警 梯度徽章 & 里程碑 */
+.tier-row{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px}
+.tier-badge{background:#f8f9fb;border-radius:8px;padding:8px 14px;font-size:13px;color:#444}
+.tier-badge b{font-size:18px;margin-right:2px}
+.tier-5{border-left:4px solid var(--warning)}
+.tier-7{border-left:4px solid #e67e22}
+.tier-10{border-left:4px solid var(--danger)}
+
+.mile-cols{display:flex;gap:10px;padding:6px 14px 14px;flex-wrap:wrap}
+.mile-col{flex:1 1 30%;min-width:180px;background:#fafbfc;border:0.5px solid #eee;border-radius:8px;padding:10px}
+.mile-title{font-size:12px;font-weight:600;color:#333;margin-bottom:6px}
+.mile-item{display:flex;justify-content:space-between;font-size:12px;color:#555;padding:3px 0;border-bottom:0.5px dashed #eee}
+.mile-item span{font-weight:600;color:var(--primary-dark)}

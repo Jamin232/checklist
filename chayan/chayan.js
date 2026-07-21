@@ -537,6 +537,8 @@ async function loadAndProcess(file) {
     const res = processData(rawData);
     records = res.records;
     maxShipDate = res.maxDate;
+    // 注入今日表给日度监控看板
+    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData);
     if (res.skippedNoDate > 0) {
       showToast(`⚠️ 有 ${res.skippedNoDate} 行因缺少或无法识别「仓库出货日期」，未参与周度趋势统计（请检查日期格式，如 2026年7月21日、21/07/2026）。`, 'warn');
     } else {
@@ -1570,6 +1572,22 @@ function initEvents() {
     if (file) loadAndProcess(file);
   });
 
+  // 昨日表（异常监控"较昨日变动"用）
+  const fileInputY = document.getElementById('fileInputY');
+  const yesterdayStatus = document.getElementById('yesterdayStatus');
+  if (fileInputY) {
+    fileInputY.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (yesterdayStatus) yesterdayStatus.textContent = '解析中…';
+      if (typeof Daily !== 'undefined' && Daily.loadYesterdayFile) {
+        Daily.loadYesterdayFile(file).then(() => {
+          if (yesterdayStatus) yesterdayStatus.textContent = '已载入：' + file.name;
+        });
+      }
+    });
+  }
+
   // 粒度切换
   document.querySelectorAll('.granularity-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1651,6 +1669,15 @@ function switchTab(tabName) {
     // 同时刷新明细表格
     const searchInput = document.getElementById('detailSearch');
     filterDetailTable(searchInput ? searchInput.value : '');
+  }
+  // 日度监控看板
+  if (typeof Daily !== 'undefined') {
+    if (tabName === 'd_overview') Daily.renderOverview();
+    if (tabName === 'd_intransit') Daily.renderIntransit();
+    if (tabName === 'd_sla') Daily.renderSLA();
+    if (tabName === 'd_abnormal') Daily.renderAbnormal();
+    if (tabName === 'd_cost') Daily.renderCost();
+    if (tabName === 'd_tomorrow') Daily.renderTomorrow();
   }
   // 再次 resize 确保渲染后尺寸正确
   setTimeout(resizeCharts, 150);
