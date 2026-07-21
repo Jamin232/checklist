@@ -103,14 +103,26 @@ function formatDateYM(d) {
 function getWeekKey(d) {
   const dt = d instanceof Date ? d : parseDate(d);
   if (!dt) return '';
-  const day = dt.getDay() || 7;
-  const mon = new Date(dt);
-  mon.setDate(dt.getDate() - day + 1);
+  // 防御性：先按本地年月日重建为当天 0 点，规避 SheetJS(cellDates) 返回的 Date 携带的时区/时间偏移导致的跨日错位
+  const base = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  // 中国日历周：周一为一周起点（周一~周日）。getDay(): 周日=0，视作 7
+  const day = base.getDay() || 7;
+  const mon = new Date(base);
+  mon.setDate(base.getDate() - day + 1);
   const y = mon.getFullYear();
-  const m = mon.getMonth() + 1;
   const dayOfYear = Math.floor((mon - new Date(y, 0, 1)) / 86400000) + 1;
   const w = Math.ceil(dayOfYear / 7);
-  return `${y}-W${String(w).padStart(2,'0')}`;
+  const mm = String(mon.getMonth() + 1).padStart(2, '0');
+  const dd = String(mon.getDate()).padStart(2, '0');
+  // 在 key 中嵌入该周周一日期，便于直观核对（如 2026-W28 (07/13)）
+  return `${y}-W${String(w).padStart(2,'0')} (${mm}/${dd})`;
+}
+
+// 周 key -> 紧凑轴标签（取周一日期，如 07/13），用于在折线图 X 轴清晰展示
+function weekShort(wk) {
+  if (!wk) return '';
+  const m = wk.match(/\((\d{2}\/\d{2})\)/);
+  return m ? m[1] : wk;
 }
 
 function safeStr(val) {
@@ -670,7 +682,7 @@ function updateDashboardTab() {
     const chart = setChart('trendChart', chartDom);
     const option = createLineChartOption(
       `总体查验率趋势 (${currentGranularity === 'week' ? '周度' : '月度'})`,
-      keys,
+      keys.map(weekShort),
       [
         { name: '起运港查验率', data: domesticData },
         { name: '目的港查验率', data: foreignData },
@@ -722,7 +734,7 @@ function updateChannelTrendChart() {
   });
 
   const metricName = channelTrendMetric === 'domestic' ? '起运港' : (channelTrendMetric === 'foreign' ? '目的港' : '综合');
-  const option = createLineChartOption(`渠道查验率${isWeek ? '周' : '月'}趋势（${metricName}）`, timeKeys, series);
+  const option = createLineChartOption(`渠道查验率${isWeek ? '周' : '月'}趋势（${metricName}）`, timeKeys.map(weekShort), series);
   const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#06b6d4', '#84cc16'];
   option.color = palette.slice(0, series.length);
   option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
@@ -1170,7 +1182,7 @@ function updateDrilldownTab() {
       return { name: agent, data, lineStyle: { width: 2 }, itemStyle: { color: palette[idx % palette.length] } };
     });
     const chart = setChart('drilldownTrendChart', trendDom);
-    const option = createLineChartOption(`${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`, sortedWeeks, series);
+    const option = createLineChartOption(`${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`, sortedWeeks.map(weekShort), series);
     option.color = palette.slice(0, series.length);
     option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
     option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
