@@ -57,10 +57,25 @@ function parseDate(val) {
   if (val instanceof Date) return val;
   if (typeof val === 'number') {
     // Excel 日期序列号 -> JS Date (1900/1904 兼容由 SheetJS 处理)
-    // 这里假设 SheetJS 已经转换，如果未转换则手动处理
     return new Date((val - 25569) * 86400 * 1000);
   }
-  const d = new Date(val);
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // 1) 中文格式：2026年7月21日 / 2026年7月21
+  let m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+
+  // 2) 年-月-日 / 年.月.日 / 年/月/日 （用本地构造，避免 UTC 时区偏移）
+  m = s.match(/^(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+
+  // 3) 日/月/年 或 日-月-年 （中国/欧洲常见，如 21/07/2026）
+  m = s.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+
+  // 4) 兜底：交给原生解析（处理 ISO 等）
+  const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -137,6 +152,7 @@ function readExcel(file) {
 function processData(rows) {
   const list = [];
   let maxD = null;
+  let skippedNoDate = 0; // 因缺少/无法解析发货日期而未参与周度统计的行数
   const seenSubTickets = new Set(); // 全局分出仓单号去重
 
   for (const row of rows) {
@@ -195,6 +211,8 @@ function processData(rows) {
 
     if (shipDate) {
       if (!maxD || shipDate > maxD) maxD = shipDate;
+    } else {
+      skippedNoDate++;
     }
 
     // 查验时效（BI/BJ列，数值型为天数）
@@ -229,7 +247,7 @@ function processData(rows) {
     });
   }
 
-  return { records: list, maxDate: maxD };
+  return { records: list, maxDate: maxD, skippedNoDate };
 }
 
 // ===================== 聚合计算 =====================
@@ -507,6 +525,11 @@ async function loadAndProcess(file) {
     const res = processData(rawData);
     records = res.records;
     maxShipDate = res.maxDate;
+    if (res.skippedNoDate > 0) {
+      showToast(`⚠️ 有 ${res.skippedNoDate} 行因缺少或无法识别「仓库出货日期」，未参与周度趋势统计（请检查日期格式，如 2026年7月21日、21/07/2026）。`, 'warn');
+    } else {
+      showToast(`✓ 成功加载 ${records.length} 条记录，全部含有效发货日期`, 'success');
+    }
 
     // 全量聚合
     aggByTime = { week: aggregateByTime(records, 'week'), month: aggregateByTime(records, 'month') };
@@ -569,6 +592,21 @@ async function loadAndProcess(file) {
 function showLoading(show) {
   const el = document.getElementById('loadingMask');
   if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+// 轻量 toast 提示（自动消失）
+function showToast(msg, type) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = 'toast toast-' + (type || 'info');
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 4500);
 }
 
 // ===================== UI 更新 =====================
