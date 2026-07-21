@@ -28,6 +28,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .tab-bar{display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:58px;z-index:9}
 .tab-btn{flex:1;text-align:center;padding:10px 4px;font-size:13px;color:#888;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;-webkit-tap-highlight-color:transparent}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+.export-btn{flex:0 0 auto;margin-left:auto;align-self:center;background:var(--primary);color:#fff;border:none;border-radius:15px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.export-btn:active{transform:scale(.96);opacity:.9}
 
 /* 上传面板 */
 .upload-panel{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}

@@ -1244,6 +1244,253 @@ function renderTableCustom(tableId, rows, headers, keys) {
   table.innerHTML = html;
 }
 
+// ===================== 导出 Excel =====================
+function exportToExcel() {
+  if (!records || records.length === 0) {
+    alert('请先上传产品跟踪表再导出');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // 数组 -> 工作表 -> 追加（空数组保护）
+  const addSheet = (name, rows) => {
+    const data = (rows && rows.length > 0) ? rows : [{}];
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  };
+  const num2 = n => (typeof n === 'number') ? +n.toFixed(2) : n;
+
+  // 1. 总览 KPI
+  const total = records.reduce((s, r) => s + r.ticketCount, 0);
+  const domT = records.reduce((s, r) => s + (r.isDomestic ? r.ticketCount : 0), 0);
+  const forT = records.reduce((s, r) => s + (r.isForeign ? r.ticketCount : 0), 0);
+  const kpi = [
+    { 指标: '总发货票数', 数值: total },
+    { 指标: '起运港查验率(%)', 数值: total > 0 ? num2(domT / total * 100) : 0 },
+    { 指标: '目的港查验率(%)', 数值: total > 0 ? num2(forT / total * 100) : 0 },
+    { 指标: '综合查验率(%)', 数值: total > 0 ? num2((domT + forT) / total * 100) : 0 }
+  ];
+  if (allWeekKeys.length >= 2) {
+    const lw = allWeekKeys[allWeekKeys.length - 2];
+    const d = aggByTime['week'][lw];
+    if (d) {
+      kpi.push({ 指标: '上周综合查验率(%)', 数值: num2(d.overallRate) });
+      kpi.push({ 指标: '上周发货票数', 数值: d.totalTickets });
+    }
+  }
+  addSheet('总览', kpi);
+
+  // 2. 周度趋势
+  const weekKeys = Object.keys(aggByTime['week']).sort();
+  addSheet('周度趋势', weekKeys.map(wk => {
+    const d = aggByTime['week'][wk];
+    return {
+      周次: wk, 总票数: d.totalTickets,
+      起运港查验率: num2(d.domesticRate), 目的港查验率: num2(d.foreignRate), 综合查验率: num2(d.overallRate)
+    };
+  }));
+
+  // 3. 月度趋势
+  const monthKeys = Object.keys(aggByTime['month']).sort();
+  addSheet('月度趋势', monthKeys.map(mk => {
+    const d = aggByTime['month'][mk];
+    return {
+      月份: mk, 总票数: d.totalTickets,
+      起运港查验率: num2(d.domesticRate), 目的港查验率: num2(d.foreignRate), 综合查验率: num2(d.overallRate)
+    };
+  }));
+
+  // 4. 渠道大类汇总
+  addSheet('渠道大类汇总', Object.entries(aggByChannel)
+    .filter(([k]) => k)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .map(([k, v]) => ({
+      渠道大类: k, 总票数: v.totalTickets,
+      起运港查验率: num2(v.domesticRate), 目的港查验率: num2(v.foreignRate), 综合查验率: num2(v.overallRate)
+    })));
+
+  // 5. 渠道周对比（上上周→上周 起运港率）
+  if (allWeekKeys.length >= 3) {
+    const prevWk = allWeekKeys[allWeekKeys.length - 2];
+    const prev2Wk = allWeekKeys[allWeekKeys.length - 3];
+    const rows = [];
+    for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
+      const cur = wm[prevWk], prev = wm[prev2Wk];
+      if (!cur || cur.totalTickets < 10) continue;
+      const curRate = cur.domesticTickets / cur.totalTickets * 100;
+      const prevRate = prev && prev.totalTickets >= 5 ? prev.domesticTickets / prev.totalTickets * 100 : null;
+      rows.push({
+        渠道大类: ch, 上周票数: cur.totalTickets,
+        上周起运港率: num2(curRate),
+        上上周起运港率: prevRate !== null ? num2(prevRate) : '',
+        变化: prevRate !== null ? num2(curRate - prevRate) : '新'
+      });
+    }
+    rows.sort((a, b) => b.上周起运港率 - a.上周起运港率);
+    addSheet('渠道周对比', rows);
+  }
+
+  // 6. 代理绩效对比
+  {
+    const globalTotal = records.reduce((s, r) => s + r.ticketCount, 0);
+    const lastWk = allWeekKeys[allWeekKeys.length - 2];
+    const prevWk = allWeekKeys[allWeekKeys.length - 3];
+    let gLast = 0, gPrev = 0;
+    if (lastWk) for (const wm of Object.values(aggByAgentWeekly)) if (wm[lastWk]) gLast += wm[lastWk].totalTickets;
+    if (prevWk) for (const wm of Object.values(aggByAgentWeekly)) if (wm[prevWk]) gPrev += wm[prevWk].totalTickets;
+    const rows = [];
+    for (const [agent, data] of Object.entries(aggByAgent)) {
+      if (!agent || data.totalTickets < 5) continue;
+      const totalShare = globalTotal > 0 ? data.totalTickets / globalTotal * 100 : 0;
+      const wm = aggByAgentWeekly[agent];
+      let lastWkTotal = 0, lastWkDom = 0, lastWkRate = null, lastWkShare = 0, prevWkRate = null, delta = null;
+      if (wm && lastWk && wm[lastWk]) {
+        lastWkTotal = wm[lastWk].totalTickets;
+        lastWkDom = wm[lastWk].domesticTickets;
+        lastWkRate = lastWkTotal > 0 ? lastWkDom / lastWkTotal * 100 : null;
+        lastWkShare = gLast > 0 ? lastWkTotal / gLast * 100 : 0;
+      }
+      if (wm && prevWk && wm[prevWk] && wm[prevWk].totalTickets >= 5) {
+        prevWkRate = wm[prevWk].domesticTickets / wm[prevWk].totalTickets * 100;
+      }
+      if (lastWkRate !== null && prevWkRate !== null) delta = lastWkRate - prevWkRate;
+      let suggestion = '';
+      if (lastWkRate !== null && lastWkRate > SETTINGS.highRisk) suggestion = '规避';
+      else if (lastWkRate !== null && lastWkRate > SETTINGS.midRisk) suggestion = '减量';
+      else if (data.domesticRate <= 1 && data.overallRate <= SETTINGS.midRisk) suggestion = '推荐';
+      else suggestion = '正常';
+      rows.push({
+        代理: agent, 总票数: data.totalTickets, 总占比: num2(totalShare),
+        上周票数: lastWkTotal || '', 上周占比: lastWkShare ? num2(lastWkShare) : '',
+        总体国内: num2(data.domesticRate), 总体国外: num2(data.foreignRate), 总体综合: num2(data.overallRate),
+        上上周国内: prevWkRate !== null ? num2(prevWkRate) : '', 上周国内: lastWkRate !== null ? num2(lastWkRate) : '',
+        变化: delta !== null ? num2(delta) : '', 建议: suggestion
+      });
+    }
+    rows.sort((a, b) => {
+      const ra = a.上周国内 !== '' ? a.上周国内 : a.总体国内;
+      const rb = b.上周国内 !== '' ? b.上周国内 : b.总体国内;
+      return rb - ra;
+    });
+    addSheet('代理绩效对比', rows);
+  }
+
+  // 7. 代理 × 渠道 热力图矩阵（Top15）
+  {
+    const topAgents = Object.entries(aggByAgent).filter(([k, v]) => k && v.totalTickets >= 20)
+      .sort((a, b) => b[1].overallRate - a[1].overallRate).slice(0, 15).map(([k]) => k);
+    const topChannels = Object.entries(aggByChannel).filter(([k, v]) => k && v.totalTickets >= 20)
+      .sort((a, b) => b[1].overallRate - a[1].overallRate).slice(0, 15).map(([k]) => k);
+    const headerKey = '代理\\渠道';
+    const rows = topAgents.map(agent => {
+      const row = { [headerKey]: agent };
+      for (const ch of topChannels) {
+        const subset = records.filter(r => r.agent === agent && r.channel === ch);
+        const t = subset.reduce((s, r) => s + r.ticketCount, 0);
+        const ins = subset.reduce((s, r) => s + (r.isInspected ? r.ticketCount : 0), 0);
+        row[ch] = t > 0 ? num2(ins / t * 100) : '';
+      }
+      return row;
+    });
+    addSheet('代理渠道热力图', rows);
+  }
+
+  // 8. 下钻明细（所有渠道合并，上周视角）
+  {
+    const lastWk = allWeekKeys[allWeekKeys.length - 2];
+    const prevWk = allWeekKeys[allWeekKeys.length - 3];
+    const rows = [];
+    for (const channel of Object.keys(aggByChannel).filter(k => k)) {
+      const subset = records.filter(r => r.channel === channel);
+      const weeklyAgentMap = {}, weeklyAgentWeightMap = {}, weeklyTotalMap = {}, weeklyWeightMap = {};
+      for (const r of subset) {
+        if (!r.shipDate) continue;
+        const wk = getWeekKey(r.shipDate);
+        if (!wk) continue;
+        const a = r.agent || '(未登记)';
+        if (!weeklyAgentMap[wk]) weeklyAgentMap[wk] = {};
+        if (!weeklyAgentMap[wk][a]) weeklyAgentMap[wk][a] = { total: 0, domestic: 0 };
+        weeklyAgentMap[wk][a].total += r.ticketCount;
+        if (r.isDomestic) weeklyAgentMap[wk][a].domestic += r.ticketCount;
+        if (!weeklyAgentWeightMap[wk]) weeklyAgentWeightMap[wk] = {};
+        if (!weeklyAgentWeightMap[wk][a]) weeklyAgentWeightMap[wk][a] = 0;
+        weeklyAgentWeightMap[wk][a] += r.weight * r.ticketCount;
+        weeklyTotalMap[wk] = (weeklyTotalMap[wk] || 0) + r.ticketCount;
+        weeklyWeightMap[wk] = (weeklyWeightMap[wk] || 0) + r.weight * r.ticketCount;
+      }
+      const lastWkTotal = weeklyTotalMap[lastWk] || 0;
+      const lastWkWeight = weeklyWeightMap[lastWk] || 0;
+      const lastWkAgents = weeklyAgentMap[lastWk] || {};
+      const prevWkAgents = weeklyAgentMap[prevWk] || {};
+      const lastWkAgentWeights = weeklyAgentWeightMap[lastWk] || {};
+      for (const [agent, d] of Object.entries(lastWkAgents)) {
+        if (d.total === 0) continue;
+        const lastRate = d.domestic / d.total * 100;
+        const lastShare = lastWkTotal > 0 ? d.total / lastWkTotal * 100 : 0;
+        const lastWeight = lastWkAgentWeights[agent] || 0;
+        const weightShare = lastWkWeight > 0 ? lastWeight / lastWkWeight * 100 : 0;
+        let prevRate = null;
+        if (prevWkAgents[agent] && prevWkAgents[agent].total >= 5) prevRate = prevWkAgents[agent].domestic / prevWkAgents[agent].total * 100;
+        let delta = null;
+        if (prevRate !== null) delta = lastRate - prevRate;
+        let suggestion = '';
+        if (lastRate > SETTINGS.highRisk) suggestion = '规避';
+        else if (lastRate > SETTINGS.midRisk) suggestion = '减量';
+        else if (lastRate <= 1) suggestion = '推荐';
+        else suggestion = '正常';
+        rows.push({
+          渠道大类: channel, 代理: agent, 上周票数: d.total,
+          上周票数占比: num2(lastShare), 上周重量占比: num2(weightShare),
+          上周起运港率: num2(lastRate),
+          上上周起运港率: prevRate !== null ? num2(prevRate) : '',
+          变化: delta !== null ? num2(delta) : '', 建议: suggestion
+        });
+      }
+    }
+    rows.sort((a, b) => {
+      if (a.渠道大类 !== b.渠道大类) return a.渠道大类 < b.渠道大类 ? -1 : 1;
+      return b.上周起运港率 - a.上周起运港率;
+    });
+    addSheet('下钻明细', rows);
+  }
+
+  // 9. 预警
+  {
+    const alerts = generateAlerts();
+    addSheet('预警', alerts.map(a => ({
+      级别: a.type === 'high' ? '高风险' : (a.type === 'mid' ? '中风险' : '趋势恶化'),
+      类别: a.category, 名称: a.name,
+      查验率: num2(a.rate),
+      票数或变化: a.total ? a.total : (a.change || '')
+    })));
+  }
+
+  // 10. 产品属性 / 客户 / 素芸渠道
+  addSheet('产品属性', Object.entries(aggByProduct)
+    .filter(([k, v]) => k && v.totalTickets >= 5)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .map(([k, v]) => ({ 产品属性: k, 票数: v.totalTickets, 起运港查验率: num2(v.domesticRate), 目的港查验率: num2(v.foreignRate), 综合查验率: num2(v.overallRate) })));
+
+  addSheet('客户', Object.entries(aggByCustomer)
+    .filter(([k, v]) => k && v.totalTickets >= 5)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .map(([k, v]) => ({ 客户: k, 票数: v.totalTickets, 起运港查验率: num2(v.domesticRate), 目的港查验率: num2(v.foreignRate), 综合查验率: num2(v.overallRate) })));
+
+  addSheet('素芸渠道', Object.entries(aggByLogistic)
+    .filter(([k, v]) => k && v.totalTickets >= 5)
+    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .map(([k, v]) => ({ 素芸物流渠道: k, 票数: v.totalTickets, 起运港查验率: num2(v.domesticRate), 目的港查验率: num2(v.foreignRate), 综合查验率: num2(v.overallRate) })));
+
+  // 文件名：原文件名 + 日期
+  const fileInputEl = document.getElementById('fileInput');
+  const srcName = (fileInputEl && fileInputEl.files && fileInputEl.files[0])
+    ? fileInputEl.files[0].name.replace(/\.xlsx?$/i, '') : '数据';
+  const now = new Date();
+  const ds = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  XLSX.writeFile(wb, `查验率统计_${srcName}_${ds}.xlsx`);
+}
+
 // ===================== 事件绑定 =====================
 
 function initEvents() {
