@@ -42,12 +42,12 @@
     <div class="upload-card">
       <div class="upload-icon">📊</div>
       <div class="upload-title">上传产品跟踪表</div>
-      <div class="upload-desc">请上传 <b>产品跟踪表</b>（xlsx格式）<br>支持拖拽或点击选择</div>
+      <div class="upload-desc">请上传 <b>产品跟踪表</b>（xlsx格式）<br>可一次多选 <b>今日 + 昨日</b> 两份，<b>文件名含日期将自动区分</b>（如 0720、2026-07-20）<br>支持拖拽或点击选择</div>
       <div class="upload-zone" id="dropZone">
         <div>📁 点击或拖拽文件到此处</div>
         <div class="upload-hint">仅支持 .xlsx 格式</div>
       </div>
-      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
+      <input type="file" id="fileInput" accept=".xlsx" multiple style="display:none">
       <div class="upload-note">
         <b>统计口径：</b>以发货日(T列)为基准，票数按分出仓单号换行分割，重复单号自动去重。<br>
         查验判定以状态备注为金标准（含"国内查验"/"国外查验"）；<br>
@@ -60,13 +60,6 @@
 
   <!-- 主内容区（上传后显示） -->
   <div id="mainContent" style="display:none">
-
-    <!-- 昨日表工具条（异常监控"较昨日变动"用） -->
-    <div class="daily-toolbar">
-      <span class="dt-label">昨日表（可选，用于异常较昨日变动）：</span>
-      <input type="file" id="fileInputY" accept=".xlsx">
-      <span id="yesterdayStatus" class="dt-hint">未载入</span>
-    </div>
 
     <!-- ===== 总览 ===== -->
     <div id="pane-dashboard" class="tab-pane active">

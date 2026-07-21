@@ -8,12 +8,24 @@ const Daily = (function () {
   // ---------------- 状态 ----------------
   let todayRecs = null;     // 今日表解析后的记录
   let yesterdayRecs = null; // 昨日表解析后的记录
+  let todayDate = null;     // 今日表文件名解析出的日期（用于"当日新增查验"基准）
+  let yesterdayDate = null; // 昨日表文件名解析出的日期
   let _inited = false;
 
-  const now = new Date();
-  const TODAY = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  const TOMORROW = new Date(TODAY);
-  TOMORROW.setUTCDate(TOMORROW.getUTCDate() + 1);
+  let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
+  function computeToday(date) {
+    let base;
+    if (date && !isNaN(date.getTime())) {
+      base = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    } else {
+      const n = new Date();
+      base = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+    }
+    TODAY = base;
+    TOMORROW = new Date(TODAY);
+    TOMORROW.setUTCDate(TOMORROW.getUTCDate() + 1);
+  }
+  computeToday(null); // 默认真实今日
 
   const STATUS_WORDS = ['查验中', '开查中', '索赔中', '赔付中']; // 异常状态词
   const MILE = ['到港', '清关', '派送'];
@@ -178,30 +190,18 @@ const Daily = (function () {
   }
 
   // ---------------- 数据注入 ----------------
-  function setData(rawRows) {
+  // date: 由文件名解析出的日期(Date|null)，用于推导 TODAY（当日新增查验 / 明日预警的基准）
+  function setData(rawRows, date) {
+    computeToday(date);
+    todayDate = date || null;
     todayRecs = parseDailyRows(rawRows || []);
   }
-  function loadYesterdayFile(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const wb = XLSX.read(data, { type: 'array', cellDates: true });
-          const sheetName = wb.SheetNames.find(s => s.trim().startsWith('空运+快递+陆运')) || wb.SheetNames[0];
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-          yesterdayRecs = parseDailyRows(rows);
-          if (typeof showToast === 'function') showToast(`✓ 昨日表已载入（${yesterdayRecs.length} 条），异常监控可显示较昨日变动`, 'success');
-          // 若异常 Tab 已打开则刷新
-          if (document.querySelector('.tab-btn[data-tab="d_abnormal"]')?.classList.contains('active')) renderAbnormal();
-        } catch (err) {
-          if (typeof showToast === 'function') showToast('⚠️ 昨日表解析失败：' + err.message, 'warn');
-        }
-        resolve();
-      };
-      reader.onerror = () => { if (typeof showToast === 'function') showToast('⚠️ 昨日表读取失败', 'warn'); resolve(); };
-      reader.readAsArrayBuffer(file);
-    });
+  // 昨日表：由 chayan.js 读取后注入（支持多文件按文件名日期自动区分今日/昨日）
+  function setYesterday(rawRows, date) {
+    yesterdayDate = date || null;
+    yesterdayRecs = parseDailyRows(rawRows || []);
+    if (typeof showToast === 'function') showToast(`✓ 昨日表已载入（${yesterdayRecs.length} 条），异常监控显示较昨日变动`, 'success');
+    if (document.querySelector('.tab-btn[data-tab="d_abnormal"]')?.classList.contains('active')) renderAbnormal();
   }
 
   // ---------------- 通用聚合 ----------------
@@ -291,7 +291,7 @@ const Daily = (function () {
     // 昨日对比（异常相关）
     let extra = `<div class="ov-note">数据基准日：${fmtDate(TODAY)} ｜ 在途定义：实际签收时间为空即视为在途（含赔付中/索赔中/开查中未签收单）。</div>`;
     if (yesterdayRecs) {
-      const t = dailyMetrics(todayRecs), y = dailyMetrics(yesterdayRecs);
+      const t = dailyMetrics(todayRecs, TODAY), y = dailyMetrics(yesterdayRecs, yesterdayDate || TODAY);
       const dIns = t.inspecting - y.inspecting;
       const dAbn = t.abnormal - y.abnormal;
       const dNew = t.newInspect - y.newInspect;
@@ -306,12 +306,14 @@ const Daily = (function () {
     document.getElementById('ov-extra').innerHTML = extra;
   }
 
-  function dailyMetrics(recs) {
+  // refDate: 该数据对应的"当日"基准（今日表用 TODAY，昨日表用昨日文件日期），确保"较昨日变动"各自独立
+  function dailyMetrics(recs, refDate) {
+    const ref = refDate || TODAY;
     let inspecting = 0, abnormal = 0, newInspect = 0;
     for (const r of recs) {
       if (r.isInspecting) inspecting++;
       if (r.isAbnormal) abnormal++;
-      if ((r.domInspectDate && sameDay(r.domInspectDate, TODAY)) || (r.destInspectDate && sameDay(r.destInspectDate, TODAY))) newInspect++;
+      if ((r.domInspectDate && sameDay(r.domInspectDate, ref)) || (r.destInspectDate && sameDay(r.destInspectDate, ref))) newInspect++;
     }
     return { inspecting, abnormal, newInspect };
   }
@@ -357,47 +359,67 @@ const Daily = (function () {
   // ============================================================
   // ③ 时效 SLA
   // ============================================================
+  // 分位值（升序第 ceil(p*n)-1 个）
+  function percentile(arr, p) {
+    if (arr.length === 0) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const idx = Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1));
+    return s[idx];
+  }
+
   function renderSLA() {
     if (!todayRecs) { noData('sla-chart'); noData('sla-table'); return; }
-    // 已签收单，按渠道聚合
-    const signed = todayRecs.filter(r => !r.inTransit && r.shipDate && r.signTime);
+    // 同事原算法：剔除异常单（查验/开查/索赔/赔付），仅用正常已签收单推导时效基线
+    const normalSigned = todayRecs.filter(r => !r.inTransit && !r.isAbnormal && r.shipDate && r.signTime);
     const byCh = {};
-    for (const r of signed) {
+    for (const r of normalSigned) {
       const k = r.logisticChannel || '未知';
-      if (!byCh[k]) byCh[k] = { n: 0, leadSum: 0, refSum: 0, over: 0, ok: 0 };
-      const lead = Math.round((r.signTime - r.shipDate) / 86400000);
-      byCh[k].n++;
-      byCh[k].leadSum += lead;
-      byCh[k].refSum += r.refLead;
-      if (r.latestDeliver && r.signTime > r.latestDeliver) byCh[k].over++;
-      else byCh[k].ok++;
+      if (!byCh[k]) byCh[k] = { leads: [], refLeads: [] };
+      byCh[k].leads.push(Math.round(dayDiff(r.signTime, r.shipDate))); // 总时效=签收-仓库出货
+      if (r.refLead > 0) byCh[k].refLeads.push(r.refLead);
     }
-    const arr = Object.entries(byCh).map(([k, v]) => ({
-      key: k, n: v.n, avgLead: v.n ? v.leadSum / v.n : 0,
-      avgRef: v.n ? v.refSum / v.n : 0, over: v.over, rate: v.n ? v.ok / v.n * 100 : 0
-    })).sort((a, b) => b.n - a.n).slice(0, 15);
+    const MIN_SAMPLE = 5;
+    const arr = Object.entries(byCh).map(([k, v]) => {
+      const n = v.leads.length;
+      const avgLead = n ? v.leads.reduce((a, b) => a + b, 0) / n : 0;
+      const p90 = percentile(v.leads, 0.9);                 // 90% 置信时效（区间内）
+      const tail = v.leads.filter(l => l > p90);            // 超区间（长尾）单
+      const avgExceed = tail.length ? tail.reduce((a, b) => a + (b - p90), 0) / tail.length : 0;
+      const suggested = n >= MIN_SAMPLE ? p90 + avgExceed : avgLead; // 建议时效 = P90 + 平均超出
+      const refAvg = v.refLeads.length ? v.refLeads.reduce((a, b) => a + b, 0) / v.refLeads.length : 0;
+      const over = v.leads.filter(l => l > suggested).length;
+      const rate = n ? (n - over) / n * 100 : 0;            // SLA达成率（以建议时效为承诺基线）
+      return { key: k, n, avgLead, p90, suggested, refAvg, over, rate, small: n < MIN_SAMPLE };
+    }).sort((a, b) => b.n - a.n).slice(0, 15);
 
-    // 图表：平均实际时效 vs 参考时效
+    // 图表：平均实际时效 / 建议时效 / 参考时效（柱）+ SLA达成率（线，次轴）
     setOpt('sla-chart', {
       tooltip: { trigger: 'axis' },
-      legend: { data: ['平均实际时效(天)', '参考时效(天)'], bottom: 0 },
-      grid: { left: 50, right: 20, top: 20, bottom: 50 },
+      legend: { data: ['平均实际时效', '建议时效', '参考时效', 'SLA达成率'], bottom: 0 },
+      grid: { left: 50, right: 50, top: 20, bottom: 50 },
       xAxis: { type: 'category', data: arr.map(x => x.key), axisLabel: { interval: 0, rotate: 30, fontSize: 10 } },
-      yAxis: { type: 'value', name: '天' },
+      yAxis: [
+        { type: 'value', name: '天' },
+        { type: 'value', name: '%', max: 100, axisLabel: { formatter: '{value}%' } }
+      ],
       series: [
-        { name: '平均实际时效(天)', type: 'bar', data: arr.map(x => +x.avgLead.toFixed(1)), itemStyle: { color: '#2b6cb0' } },
-        { name: '参考时效(天)', type: 'line', data: arr.map(x => +x.avgRef.toFixed(1)), itemStyle: { color: '#e08e0b' }, symbolSize: 7 }
+        { name: '平均实际时效', type: 'bar', data: arr.map(x => +x.avgLead.toFixed(1)), itemStyle: { color: '#2b6cb0' } },
+        { name: '建议时效', type: 'bar', data: arr.map(x => +x.suggested.toFixed(1)), itemStyle: { color: '#38a169' } },
+        { name: '参考时效', type: 'bar', data: arr.map(x => +x.refAvg.toFixed(1)), itemStyle: { color: '#e08e0b' } },
+        { name: 'SLA达成率', type: 'line', yAxisIndex: 1, data: arr.map(x => +x.rate.toFixed(1)), itemStyle: { color: '#d53f8c' }, symbolSize: 7 }
       ]
     });
 
     // 表格
     const tb = document.getElementById('sla-table');
     if (tb) {
-      tb.innerHTML = `<tr><th>素芸物流渠道</th><th>已签收票数</th><th>平均实际时效</th><th>参考时效</th><th>超时单数</th><th>SLA达成率</th></tr>` +
+      tb.innerHTML = `<tr><th>素芸物流渠道</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
         arr.map(x => {
           const rc = x.rate >= 90 ? 'rate-good' : (x.rate >= 80 ? 'rate-mid' : 'rate-bad');
-          return `<tr><td>${x.key}</td><td>${x.n}</td><td>${x.avgLead.toFixed(1)}</td><td>${x.avgRef.toFixed(1)}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
-        }).join('') + `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${signed.length}</td><td colspan="4"></td></tr>`;
+          return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg.toFixed(1) : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
+        }).join('') +
+        `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${normalSigned.length}</td><td colspan="5"></td></tr>` +
+        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = 90%置信时效(P90) + 超区间单平均超出天数（已剔除查验等异常单）；以此作为该渠道SLA承诺基线，达成率=实际≤建议时效占比</td></tr>`;
     }
   }
 
@@ -414,7 +436,7 @@ const Daily = (function () {
 
     let deltaHtml = '';
     if (yesterdayRecs) {
-      const t = dailyMetrics(todayRecs), y = dailyMetrics(yesterdayRecs);
+      const t = dailyMetrics(todayRecs, TODAY), y = dailyMetrics(yesterdayRecs, yesterdayDate || TODAY);
       const mk = (cur, prev, label) => {
         const d = cur - prev;
         return `<div class="ab-delta-item">${label}<b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</b><span>较昨日</span></div>`;
@@ -534,12 +556,17 @@ const Daily = (function () {
     }
     return res;
   }
-  // 返回该单明日最核心里程碑（派送>清关>到港），无则 null
+  // 返回该单明日最核心里程碑：以"最新(日期最大)里程碑"为核心，同日再按 派送>清关>到港 优先级
   function tomorrowPrimary(rec) {
-    const ms = parseMilestones(rec.remark).filter(m => sameDay(m.date, TOMORROW));
+    const ms = parseMilestones(rec.remark);
     if (ms.length === 0) return null;
-    ms.sort((a, b) => MILE_PRIORITY[b.type] - MILE_PRIORITY[a.type]);
-    return ms[0].type;
+    ms.sort((a, b) => {
+      const d = dayDiff(b.date, a.date); // 日期大的在前
+      if (d !== 0) return d;
+      return MILE_PRIORITY[b.type] - MILE_PRIORITY[a.type];
+    });
+    const latest = ms[0];
+    return sameDay(latest.date, TOMORROW) ? latest.type : null; // 仅当最新里程碑日期=次日才预警
   }
 
   function renderTomorrow() {
@@ -601,7 +628,7 @@ const Daily = (function () {
 
   // ---------------- 对外接口 ----------------
   return {
-    setData, loadYesterdayFile, init,
+    setData, setYesterday, init,
     setCostDim, setCostMetric,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow
   };

@@ -530,15 +530,15 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
 
 // ===================== 核心处理流程 =====================
 
-async function loadAndProcess(file) {
+async function loadAndProcess(file, fileDate) {
   try {
     showLoading(true);
     rawData = await readExcel(file);
     const res = processData(rawData);
     records = res.records;
     maxShipDate = res.maxDate;
-    // 注入今日表给日度监控看板
-    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData);
+    // 注入今日表给日度监控看板（fileDate 由文件名日期推导 TODAY）
+    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData, fileDate || null);
     if (res.skippedNoDate > 0) {
       showToast(`⚠️ 有 ${res.skippedNoDate} 行因缺少或无法识别「仓库出货日期」，未参与周度趋势统计（请检查日期格式，如 2026年7月21日、21/07/2026）。`, 'warn');
     } else {
@@ -1553,7 +1553,41 @@ function exportToExcel() {
 // ===================== 事件绑定 =====================
 
 function initEvents() {
-  // 文件上传
+  // 文件上传（支持多选：按文件名日期自动区分今日/昨日）
+  function fileDateFromName(name) {
+    const s = name.replace(/\.xlsx?$/i, '');
+    let m;
+    m = s.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    m = s.match(/(\d{4})(\d{2})(\d{2})/);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    const y = new Date().getFullYear();
+    m = s.match(/(\d{2})(\d{2})/);
+    if (m) { const mo = +m[1], da = +m[2]; if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return new Date(Date.UTC(y, mo - 1, da)); }
+    m = s.match(/(\d{1,2})[月.\-/](\d{1,2})/);
+    if (m) { const mo = +m[1], da = +m[2]; if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return new Date(Date.UTC(y, mo - 1, da)); }
+    return null;
+  }
+  async function handleUploadFiles(files) {
+    const list = Array.from(files).filter(f => /\.xlsx?$/i.test(f.name));
+    if (list.length === 0) return;
+    const items = [];
+    for (const f of list) {
+      const rows = await readExcel(f);
+      items.push({ file: f, rows, date: fileDateFromName(f.name) });
+    }
+    items.sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
+    const todayItem = items[0];
+    const yesterdayItem = items.length > 1 ? items[1] : null;
+    await loadAndProcess(todayItem.file, todayItem.date);
+    if (yesterdayItem && typeof Daily !== 'undefined' && Daily.setYesterday) {
+      Daily.setYesterday(yesterdayItem.rows, yesterdayItem.date);
+      const td = todayItem.date ? (todayItem.date.getMonth() + 1) + '/' + todayItem.date.getDate() : '今日';
+      const yd = yesterdayItem.date ? (yesterdayItem.date.getMonth() + 1) + '/' + yesterdayItem.date.getDate() : '昨日';
+      setTimeout(() => showToast(`✓ 已按文件名日期区分：今日=${td}，昨日=${yd}（异常监控显示较昨日变动）`, 'success'), 400);
+    }
+  }
+
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   if (!dropZone || !fileInput) return;
@@ -1564,29 +1598,11 @@ function initEvents() {
   dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.xlsx')) loadAndProcess(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length) handleUploadFiles(e.dataTransfer.files);
   });
   fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) loadAndProcess(file);
+    if (e.target.files && e.target.files.length) handleUploadFiles(e.target.files);
   });
-
-  // 昨日表（异常监控"较昨日变动"用）
-  const fileInputY = document.getElementById('fileInputY');
-  const yesterdayStatus = document.getElementById('yesterdayStatus');
-  if (fileInputY) {
-    fileInputY.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (yesterdayStatus) yesterdayStatus.textContent = '解析中…';
-      if (typeof Daily !== 'undefined' && Daily.loadYesterdayFile) {
-        Daily.loadYesterdayFile(file).then(() => {
-          if (yesterdayStatus) yesterdayStatus.textContent = '已载入：' + file.name;
-        });
-      }
-    });
-  }
 
   // 粒度切换
   document.querySelectorAll('.granularity-btn').forEach(btn => {
