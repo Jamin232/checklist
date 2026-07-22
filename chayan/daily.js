@@ -28,7 +28,8 @@ const Daily = (function () {
   }
   computeToday(null); // 默认真实今日
 
-  const STATUS_WORDS = ['查验中', '开查中', '索赔中', '赔付中']; // 异常状态词
+  const STATUS_WORDS = ['查验中', '开查中', '索赔中', '赔付中']; // 异常状态词（宽口径）
+  // 注意："开查中"是快递的开查（非海关查验），不计入查验进行中，但仍属异常单口径
   const MILE = ['到港', '清关', '派送'];
   const MILE_PRIORITY = { '到港': 1, '清关': 2, '派送': 3 };
 
@@ -161,7 +162,7 @@ const Daily = (function () {
       const domInspectDate = parseDate(row[map.dom]);
       const destInspectDate = parseDate(row[map.dest]);
 
-      const isInspecting = goodsStatus.includes('查验中') || goodsStatus.includes('开查中');
+      const isInspecting = goodsStatus.includes('查验中'); // 仅海关查验（不含快递"开查中"）
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w));
 
       list.push({
@@ -461,15 +462,18 @@ const Daily = (function () {
   // ④ 异常监控
   // ============================================================
   // 异常定义对齐：
-  //   isInspecting = 货物状态含"查验中"或"开查中"（正在查验，尚未出结果）
-  //   isPureAbnormal = 货物状态含"索赔中"或"赔付中"（已进入索赔/赔付流程，不含查验中/开查中）
-  //   isAbnormal(宽口径) = isInspecting ∪ isPureAbnormal = 含 查验中/开查中/索赔中/赔付中
+  //   isInspecting = 货物状态含"查验中"（海关查验进行中，不含快递"开查中"）
+  //   isPureAbnormal = 货物状态含"索赔中"或"赔付中"（已进入索赔/赔付流程，不含查验中）
+  //   isAbnormal(宽口径) = isInspecting ∪ isPureAbnormal ∪ 开查中 = 含 查验中/开查中/索赔中/赔付中
   //   KPI 卡片展示：查验进行中(isInspecting) + 纯异常单(isPureAbnormal) —— 不重复计数
   function renderAbnormal() {
     if (!todayRecs) { noData('ab-cards'); noData('ab-table'); return; }
     const inspecting = todayRecs.filter(r => r.isInspecting);
-    // 纯异常 = 仅索赔中/赔付中（不含查验中/开查中，避免与查验进行中重复）
-    const pureAbnormal = todayRecs.filter(r => !r.isInspecting && (r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
+    // 纯异常 = 仅索赔中/赔付中（不含查验中、不含快递"开查中"，避免与查验进行中重复）
+    const pureAbnormal = todayRecs.filter(r =>
+      !r.isInspecting &&
+      !r.goodsStatus.includes('开查中') &&
+      (r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
     const newInspect = todayRecs.filter(r =>
       (r.domInspectDate && sameDay(r.domInspectDate, TODAY)) ||
       (r.destInspectDate && sameDay(r.destInspectDate, TODAY)));
@@ -488,7 +492,7 @@ const Daily = (function () {
     }
 
     document.getElementById('ab-cards').innerHTML =
-      `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中(查验中/开查中)</div></div>` +
+      `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中(海关查验)</div></div>` +
       `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">异常单(索赔/赔付)</div></div>` +
       `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">当日新增查验(${fmtMD(TODAY)})</div></div>` +
       deltaHtml;
@@ -511,7 +515,9 @@ const Daily = (function () {
       let rows = todayRecs.filter(r => r.isAbnormal &&
         (abnCustomerFilter === '全部' || r.customer === abnCustomerFilter))
         .slice(0, 300).map(r => {
-          const t = r.isInspecting ? '查验中' : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常');
+          const t = r.isInspecting ? '查验中'
+            : (r.goodsStatus.includes('开查中') ? '开查中'
+            : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常'));
           const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
           // 查验持续天数：仅查验中订单计算 = TODAY - min(国内查验时间, 目的地查验时间)
           // 合理性校验：>365天视为异常数据（日期解析错误等），显示 "-"
