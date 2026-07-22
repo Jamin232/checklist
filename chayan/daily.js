@@ -79,7 +79,8 @@ const Daily = (function () {
     return d;
   }
   function sameDay(a, b) {
-    return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    // 全程日期均为 UTC 零点构造，用 UTC getter 比较，避免本地时区跨日错位（如 UTC-8）
+    return a && b && a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() === b.getUTCDate();
   }
   // DST 安全的整天数差：返回 a - b 的天数（基于 UTC  midnight，避免夏令时 23/25 小时误差）
   function dayDiff(a, b) {
@@ -374,6 +375,21 @@ const Daily = (function () {
     const idx = Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1));
     return s[idx];
   }
+  // 中位数（参考时效取同渠道单一规划值，避免平均产生小数）
+  function median(arr) {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  // 时效SLA专用异常界定：仅"查验相关"订单排除出建议时效基线
+  // （开查中=快递开查、索赔中/赔付中=售后异常，均非海关查验延误，保留在基线）
+  // 注：查验过的单即便后续已签收，因查验时间/备注仍带"查验"标记，仍剔除
+  function isSlaAbnormal(r) {
+    return r.goodsStatus.includes('查验中') ||
+           r.remark.includes('查验') ||
+           !!r.domInspectDate || !!r.destInspectDate;
+  }
 
   function setSlaPeriod(p) { slaPeriod = p; document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p)); renderSLA(); }
 
@@ -387,8 +403,8 @@ const Daily = (function () {
       cutoff.setUTCDate(cutoff.getUTCDate() - days);
       pool = todayRecs.filter(r => r.shipDate && r.shipDate >= cutoff);
     }
-    // 同事原算法：剔除异常单（查验/开查/索赔/赔付），仅用正常已签收单推导时效基线
-    const normalSigned = pool.filter(r => !r.inTransit && !r.isAbnormal && r.shipDate && r.signTime);
+    // 时效SLA基线：仅剔除"查验相关"订单（状态查验中/备注含查验/查验时间有值）；开查中、索赔赔付保留
+    const normalSigned = pool.filter(r => !r.inTransit && !isSlaAbnormal(r) && r.shipDate && r.signTime);
     const byCh = {};
     for (const r of normalSigned) {
       const k = r.channelCategory || r.logisticChannel || '未知';
@@ -403,7 +419,7 @@ const Daily = (function () {
       const p95 = percentile(v.leads, 0.95);               // P95 = 建议时效（95%正常单可达成）
       const p90 = percentile(v.leads, 0.9);                // P90 用于参考对比
       const suggested = n >= MIN_SAMPLE ? p95 : avgLead;   // 建议时效 = P95（直观：95%的正常单在此时间内签收）
-      const refAvg = v.refLeads.length ? v.refLeads.reduce((a, b) => a + b, 0) / v.refLeads.length : 0;
+      const refAvg = v.refLeads.length ? median(v.refLeads) : 0;
       const over = v.leads.filter(l => l > suggested).length;
       const rate = n ? (n - over) / n * 100 : 0;            // SLA达成率（以建议时效为承诺基线）
       return { key: k, n, avgLead, p90, p95, suggested, refAvg, over, rate, small: n < MIN_SAMPLE };
@@ -422,7 +438,7 @@ const Daily = (function () {
       series: [
         { name: '平均实际时效(天)', type: 'bar', data: arr.map(x => +x.avgLead.toFixed(1)), itemStyle: { color: '#2b6cb0' } },
         { name: '建议时效(天)', type: 'bar', data: arr.map(x => +x.suggested.toFixed(1)), itemStyle: { color: '#38a169' } },
-        { name: '参考时效(Z列)', type: 'bar', data: arr.map(x => +x.refAvg.toFixed(1)), itemStyle: { color: '#e08e0b' } },
+        { name: '参考时效(Z列)', type: 'bar', data: arr.map(x => +x.refAvg), itemStyle: { color: '#e08e0b' } },
         { name: 'SLA达成率', type: 'line', yAxisIndex: 1, data: arr.map(x => +x.rate.toFixed(1)), itemStyle: { color: '#d53f8c' }, symbolSize: 7 }
       ]
     });
@@ -434,10 +450,10 @@ const Daily = (function () {
       tb.innerHTML = `<tr><th>渠道大类</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
         arr.map(x => {
           const rc = x.rate >= 90 ? 'rate-good' : (x.rate >= 80 ? 'rate-mid' : 'rate-bad');
-          return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg.toFixed(1) : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
+          return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
         }).join('') +
         `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${normalSigned.length}</td><td colspan="5"></td></tr>` +
-        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = P95（95%分位值，即95%的正常已签收单在此天数内完成，已剔除查验/索赔/赔付等异常单）。<br>含义：若将此渠道的参考时效设为"建议时效(P95)"，则约 ${arr.length > 0 ? Math.round(arr.filter(x=>x.rate>=95).length/arr.length*100) : 0}% 的渠道可达95%+达成率。<br>数据范围：${dimLabel} | 时效=实际签收时间−仓库出货日期</td></tr>`;
+        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = P95（95%分位值，即95%的正常已签收单在此天数内完成，已剔除"查验相关"订单：状态查验中/备注含查验/查验时间有值；开查中、索赔赔付保留）。<br>含义：若将此渠道的参考时效设为"建议时效(P95)"，则约 ${arr.length > 0 ? Math.round(arr.filter(x=>x.rate>=95).length/arr.length*100) : 0}% 的渠道可达95%+达成率。<br>数据范围：${dimLabel} | 时效=实际签收时间−仓库出货日期</td></tr>`;
     }
   }
 
