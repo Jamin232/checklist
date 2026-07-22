@@ -395,14 +395,13 @@ const Daily = (function () {
     const arr = Object.entries(byCh).map(([k, v]) => {
       const n = v.leads.length;
       const avgLead = n ? v.leads.reduce((a, b) => a + b, 0) / n : 0;
-      const p90 = percentile(v.leads, 0.9);                 // 90% 置信时效（区间内）
-      const tail = v.leads.filter(l => l > p90);            // 超区间（长尾）单
-      const avgExceed = tail.length ? tail.reduce((a, b) => a + (b - p90), 0) / tail.length : 0;
-      const suggested = n >= MIN_SAMPLE ? p90 + avgExceed : avgLead; // 建议时效 = P90 + 平均超出
+      const p95 = percentile(v.leads, 0.95);               // P95 = 建议时效（95%正常单可达成）
+      const p90 = percentile(v.leads, 0.9);                // P90 用于参考对比
+      const suggested = n >= MIN_SAMPLE ? p95 : avgLead;   // 建议时效 = P95（直观：95%的正常单在此时间内签收）
       const refAvg = v.refLeads.length ? v.refLeads.reduce((a, b) => a + b, 0) / v.refLeads.length : 0;
       const over = v.leads.filter(l => l > suggested).length;
       const rate = n ? (n - over) / n * 100 : 0;            // SLA达成率（以建议时效为承诺基线）
-      return { key: k, n, avgLead, p90, suggested, refAvg, over, rate, small: n < MIN_SAMPLE };
+      return { key: k, n, avgLead, p90, p95, suggested, refAvg, over, rate, small: n < MIN_SAMPLE };
     }).sort((a, b) => b.n - a.n).slice(0, 20);
 
     // 图表：平均实际时效 / 建议时效 / 参考时效（柱）+ SLA达成率（线，次轴）
@@ -433,17 +432,38 @@ const Daily = (function () {
           return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg.toFixed(1) : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
         }).join('') +
         `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${normalSigned.length}</td><td colspan="5"></td></tr>` +
-        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = P90(90%置信区间上限) + 超区间单平均超出天数（已剔除查验/索赔/赔付等异常单）。<br>含义：若将此渠道的参考时效设为"建议时效"，则约 ${arr.length > 0 ? Math.round(arr.filter(x=>x.rate>=90).length/arr.length*100) : 0}% 的渠道可达90%+达成率。<br>数据范围：${dimLabel} | 时效=实际签收时间−仓库出货日期</td></tr>`;
+        `<tr><td colspan="7" style="color:#888;font-size:11px">*建议时效 = P95（95%分位值，即95%的正常已签收单在此天数内完成，已剔除查验/索赔/赔付等异常单）。<br>含义：若将此渠道的参考时效设为"建议时效(P95)"，则约 ${arr.length > 0 ? Math.round(arr.filter(x=>x.rate>=95).length/arr.length*100) : 0}% 的渠道可达95%+达成率。<br>数据范围：${dimLabel} | 时效=实际签收时间−仓库出货日期</td></tr>`;
     }
+  }
+
+  // ---------------- 筛选状态 ----------------
+  let abnCustomerFilter = '全部'; // 异常/预警 客户筛选
+  let tmCustomerFilter = '全部';   // 预警 客户筛选
+
+  function setAbnCustomer(c) {
+    abnCustomerFilter = c;
+    document.querySelectorAll('.abn-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
+    renderAbnormal();
+  }
+  function setTmCustomer(c) {
+    tmCustomerFilter = c;
+    document.querySelectorAll('.tm-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
+    renderTomorrow();
   }
 
   // ============================================================
   // ④ 异常监控
   // ============================================================
+  // 异常定义对齐：
+  //   isInspecting = 货物状态含"查验中"或"开查中"（正在查验，尚未出结果）
+  //   isPureAbnormal = 货物状态含"索赔中"或"赔付中"（已进入索赔/赔付流程，不含查验中/开查中）
+  //   isAbnormal(宽口径) = isInspecting ∪ isPureAbnormal = 含 查验中/开查中/索赔中/赔付中
+  //   KPI 卡片展示：查验进行中(isInspecting) + 纯异常单(isPureAbnormal) —— 不重复计数
   function renderAbnormal() {
     if (!todayRecs) { noData('ab-cards'); noData('ab-table'); return; }
     const inspecting = todayRecs.filter(r => r.isInspecting);
-    const abnormal = todayRecs.filter(r => r.isAbnormal);
+    // 纯异常 = 仅索赔中/赔付中（不含查验中/开查中，避免与查验进行中重复）
+    const pureAbnormal = todayRecs.filter(r => !r.isInspecting && (r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
     const newInspect = todayRecs.filter(r =>
       (r.domInspectDate && sameDay(r.domInspectDate, TODAY)) ||
       (r.destInspectDate && sameDay(r.destInspectDate, TODAY)));
@@ -455,26 +475,54 @@ const Daily = (function () {
         const d = cur - prev;
         return `<div class="ab-delta-item">${label}<b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</b><span>较昨日</span></div>`;
       };
-      deltaHtml = `<div class="ab-delta">${mk(t.inspecting, y.inspecting, '查验进行中')}${mk(t.abnormal, y.abnormal, '异常单')}${mk(t.newInspect, y.newInspect, '当日新增查验')}</div>`;
+      // 去掉"查验进行中 较昨日"——与"当日新增查验"信息重复（查验进行中+2 ≈ 当日新增+2）
+      deltaHtml = `<div class="ab-delta">${mk(t.abnormal - t.inspecting, y.abnormal - y.inspecting, '异常单(索赔/赔付)')}${mk(t.newInspect, y.newInspect, '当日新增查验')}</div>`;
     } else {
       deltaHtml = '<div class="ov-note" style="color:#e08e0b">未载入昨日表，暂不显示"较昨日变动"。</div>';
     }
 
     document.getElementById('ab-cards').innerHTML =
       `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中(查验中/开查中)</div></div>` +
-      `<div class="kpi-card ov-overdue"><div class="kpi-num">${abnormal.length}</div><div class="kpi-label">异常单(含索赔/赔付)</div></div>` +
+      `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">异常单(索赔/赔付)</div></div>` +
       `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">当日新增查验(${fmtMD(TODAY)})</div></div>` +
       deltaHtml;
 
-    // 明细表（异常单）— 显示分出仓单号
+    // 明细表（异常单）— 支持客户筛选 + 查验持续天数
     const tb = document.getElementById('ab-table');
     if (tb) {
-      const rows = abnormal.slice(0, 300).map(r => {
-        const t = r.isInspecting ? '查验中' : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常');
-        const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
-        return `<tr><td>${ticketDisplay}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.customer}</td><td>${r.country}</td><td class="status-inspected">${t}</td><td>${r.goodsStatus}</td></tr>`;
-      }).join('');
-      tb.innerHTML = `<tr><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr>` + (rows || '<tr><td colspan="7" style="text-align:center;color:#999">无异常单</td></tr>');
+      // 构建客户筛选选项
+      const allCustomers = [...new Set(todayRecs.filter(r => r.isAbnormal).map(r => r.customer).filter(Boolean))].sort();
+      let filterBar = '<div style="margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+        '<span style="font-size:12px;color:#666;font-weight:600">客户筛选：</span>' +
+        `<span class="abn-cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')" style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${abnCustomerFilter === '全部' ? '#2b6cb0;color:#fff' : '#fff'}">全部</span>`;
+      allCustomers.slice(0, 20).forEach(cu => {
+        const active = abnCustomerFilter === cu;
+        filterBar += `<span class="abn-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')"` +
+          ` style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${active ? '#2b6cb0;color:#fff' : '#fff'}">${cu}</span>`;
+      });
+      filterBar += '</div>';
+
+      // 筛选后的行：宽口径异常(isAbnormal) + 客户过滤
+      let rows = todayRecs.filter(r => r.isAbnormal &&
+        (abnCustomerFilter === '全部' || r.customer === abnCustomerFilter))
+        .slice(0, 300).map(r => {
+          const t = r.isInspecting ? '查验中' : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常');
+          const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
+          // 查验持续天数：仅查验中订单计算 = TODAY - min(国内查验时间, 目的地查验时间)
+          let inspectDays = '';
+          if (r.isInspecting && (r.domInspectDate || r.destInspectDate)) {
+            const inspectStart = r.domInspectDate && r.destInspectDate
+              ? (r.domInspectDate < r.destInspectDate ? r.domInspectDate : r.destInspectDate)
+              : (r.domInspectDate || r.destInspectDate);
+            inspectDays = `<td class="rate-bad">${dayDiff(TODAY, inspectStart)}天</td>`;
+          } else {
+            inspectDays = '<td>-</td>';
+          }
+          return `<tr>${inspectDays}<td>${ticketDisplay}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.customer}</td><td>${r.country}</td><td class="status-inspected">${t}</td><td>${r.goodsStatus}</td></tr>`;
+        }).join('');
+      tb.innerHTML = filterBar +
+        `<table class="data-table"><thead><tr><th>查验天数</th><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr></thead>` +
+        `<tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#999">无匹配记录</td></tr>'}</tbody></table>`;
     }
   }
 
@@ -587,17 +635,33 @@ const Daily = (function () {
   function renderTomorrow() {
     if (!todayRecs) { noData('tm-overdue'); noData('tm-mile'); return; }
 
-    // Part A：在途超期（按梯度）— 每个梯度独立展示，Tab式分离
+    // 构建客户筛选选项（从在途超期单中提取）
+    const allTmCustomers = [...new Set(todayRecs.filter(r => r.inTransit && r.latestDeliver).map(r => r.customer).filter(Boolean))].sort();
+
+    // Part A：在途超期（按梯度）— 每个梯度独立展示，Tab式分离 + 客户筛选
     const tiers = [
       { key: '≥10天', test: d => d >= 10, cls: 'tier-10', desc: '严重超期，需立即跟进' },
       { key: '≥7天', test: d => d >= 7 && d < 10, cls: 'tier-7', desc: '明显超期，关注处理' },
       { key: '>5天', test: d => d > 5 && d < 7, cls: 'tier-5', desc: '轻度超期，持续观察' }
     ];
     const list = todayRecs.filter(r => r.inTransit && r.latestDeliver);
-    const overdueRows = list.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
+    // 应用客户筛选
+    const filteredList = tmCustomerFilter === '全部' ? list : list.filter(r => r.customer === tmCustomerFilter);
+    const overdueRows = filteredList.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
+
+    // 客户筛选栏
+    let custFilterHtml = '<div style="margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+      '<span style="font-size:12px;color:#666;font-weight:600">客户筛选：</span>' +
+      `<span class="tm-cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')" style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${tmCustomerFilter === '全部' ? '#2b6cb0;color:#fff' : '#fff'}">全部</span>`;
+    allTmCustomers.slice(0, 20).forEach(cu => {
+      const active = tmCustomerFilter === cu;
+      custFilterHtml += `<span class="tm-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')"` +
+        ` style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${active ? '#2b6cb0;color:#fff' : '#fff'}">${cu}</span>`;
+    });
+    custFilterHtml += '</div>';
 
     // 构建每个梯度的独立卡片+表格
-    let oh = '<div class="tm-tier-group">';
+    let oh = '<div class="tm-tier-group">' + custFilterHtml;
     for (const t of tiers) {
       const rows = overdueRows.filter(x => t.test(x.d)).sort((a, b) => b.d - a.d).slice(0, 100);
       oh += `<div class="tm-tier-block">
@@ -658,6 +722,7 @@ const Daily = (function () {
   return {
     setData, setYesterday, init,
     setCostDim, setCostMetric, setSlaPeriod,
+    setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow
   };
 })();

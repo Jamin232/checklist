@@ -1619,18 +1619,16 @@ function b64Decode(s) {
 function generateShareLink() {
   const snap = collectSnapshot();
   const json = JSON.stringify(snap);
-  // 如果数据过大（>4KB），只保留核心KPI
+  // URL hash 片段不发送到服务端，浏览器支持 64KB+；仅在极端情况下(>64KB)才降采样
   let payload = json;
-  if (payload.length > 4000) {
-    snap.overview.html = '';
+  if (payload.length > 64000) {
+    // 仅裁剪最大的明细表，保留 KPI 卡片 + 核心汇总
     snap.intransit.channelBody = '';
     snap.intransit.agentBody = '';
     snap.intransit.custBody = '';
-    snap.sla.table = '';
     snap.abnormal.table = '';
     snap.cost.table = '';
     snap.tomorrow.overdue = '';
-    snap.tomorrow.mile = '';
     payload = JSON.stringify(snap);
   }
   const hash = '#' + b64Encode(payload);
