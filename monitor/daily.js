@@ -485,6 +485,11 @@ const Daily = (function () {
   function renderAbnormal() {
     if (!todayRecs) { noData('ab-cards'); noData('ab-table'); return; }
     const inspecting = todayRecs.filter(r => r.isInspecting);
+    // 开查中 = 快递开查（非海关查验、非索赔赔付）
+    const kaicha = todayRecs.filter(r =>
+      r.goodsStatus.includes('开查中') &&
+      !r.isInspecting &&
+      !(r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
     // 纯异常 = 仅索赔中/赔付中（不含查验中、不含快递"开查中"，避免与查验进行中重复）
     const pureAbnormal = todayRecs.filter(r =>
       !r.isInspecting &&
@@ -508,10 +513,12 @@ const Daily = (function () {
     }
 
     document.getElementById('ab-cards').innerHTML =
-      `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中(海关查验)</div></div>` +
-      `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">异常单(索赔/赔付)</div></div>` +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中</div></div>` +
+      `<div class="kpi-card" style="--card-color:#7c3aed"><div class="kpi-num" style="color:#7c3aed">${kaicha.length}</div><div class="kpi-label">开查中</div></div>` +
+      `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">索赔/赔付</div></div>` +
       `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">当日新增查验(${fmtMD(TODAY)})</div></div>` +
-      deltaHtml;
+      '</div>' + deltaHtml;
 
     // 明细表（异常单）— 支持客户筛选 + 查验持续天数
     const tb = document.getElementById('ab-table');
