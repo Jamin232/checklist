@@ -218,3 +218,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .tm-tier-title{font-weight:700;font-size:15px;min-width:52px}
 .tm-tier-count{color:#444;margin-left:auto}
 .tm-tier-desc{font-size:11px;color:#999}
+
+/* 客户筛选栏（横排 flex-wrap，异常/预警共用） */
+.cust-filter-bar{display:flex;align-items:center;gap:6px;padding:8px 0;flex-wrap:wrap}
+.cust-filter-label{font-size:12px;color:#666;font-weight:600;white-space:nowrap}
+.cust-btn{cursor:pointer;padding:3px 12px;border-radius:14px;font-size:11px;border:1px solid #ddd;background:#fff;color:#555;transition:all .15s;white-space:nowrap;display:inline-block}
+.cust-btn:hover{border-color:#bbb;background:#f8f9fa}
+.cust-btn.active{background:var(--primary);color:#fff;border-color:var(--primary-dark);font-weight:600}

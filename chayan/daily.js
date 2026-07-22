@@ -245,6 +245,8 @@ const Daily = (function () {
   });
 
   function noData(htmlId) {
+    // 分享模式下不覆盖已注入的内容
+    if (typeof _shareMode !== 'undefined' && _shareMode) return;
     const el = document.getElementById(htmlId);
     if (el) el.innerHTML = '<div style="padding:30px;text-align:center;color:#999">请先上传今日跟踪表（若要看较昨日变动，请一并选择昨日表）</div>';
   }
@@ -490,15 +492,14 @@ const Daily = (function () {
     // 明细表（异常单）— 支持客户筛选 + 查验持续天数
     const tb = document.getElementById('ab-table');
     if (tb) {
-      // 构建客户筛选选项
+      // 构建客户筛选选项（横排 flex-wrap）
       const allCustomers = [...new Set(todayRecs.filter(r => r.isAbnormal).map(r => r.customer).filter(Boolean))].sort();
-      let filterBar = '<div style="margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
-        '<span style="font-size:12px;color:#666;font-weight:600">客户筛选：</span>' +
-        `<span class="abn-cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')" style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${abnCustomerFilter === '全部' ? '#2b6cb0;color:#fff' : '#fff'}">全部</span>`;
+      let filterBar = '<div class="cust-filter-bar">' +
+        '<span class="cust-filter-label">客户筛选：</span>' +
+        `<span class="cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')">全部</span>`;
       allCustomers.slice(0, 20).forEach(cu => {
         const active = abnCustomerFilter === cu;
-        filterBar += `<span class="abn-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')"` +
-          ` style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${active ? '#2b6cb0;color:#fff' : '#fff'}">${cu}</span>`;
+        filterBar += `<span class="cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
       });
       filterBar += '</div>';
 
@@ -509,12 +510,14 @@ const Daily = (function () {
           const t = r.isInspecting ? '查验中' : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常');
           const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
           // 查验持续天数：仅查验中订单计算 = TODAY - min(国内查验时间, 目的地查验时间)
+          // 合理性校验：>365天视为异常数据（日期解析错误等），显示 "-"
           let inspectDays = '';
           if (r.isInspecting && (r.domInspectDate || r.destInspectDate)) {
             const inspectStart = r.domInspectDate && r.destInspectDate
               ? (r.domInspectDate < r.destInspectDate ? r.domInspectDate : r.destInspectDate)
               : (r.domInspectDate || r.destInspectDate);
-            inspectDays = `<td class="rate-bad">${dayDiff(TODAY, inspectStart)}天</td>`;
+            const dd = dayDiff(TODAY, inspectStart);
+            inspectDays = (dd > 0 && dd <= 365) ? `<td class="rate-bad">${dd}天</td>` : '<td>-</td>';
           } else {
             inspectDays = '<td>-</td>';
           }
@@ -649,14 +652,13 @@ const Daily = (function () {
     const filteredList = tmCustomerFilter === '全部' ? list : list.filter(r => r.customer === tmCustomerFilter);
     const overdueRows = filteredList.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
 
-    // 客户筛选栏
-    let custFilterHtml = '<div style="margin-bottom:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
-      '<span style="font-size:12px;color:#666;font-weight:600">客户筛选：</span>' +
-      `<span class="tm-cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')" style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${tmCustomerFilter === '全部' ? '#2b6cb0;color:#fff' : '#fff'}">全部</span>`;
+    // 客户筛选栏（横排 flex-wrap）
+    let custFilterHtml = '<div class="cust-filter-bar">' +
+      '<span class="cust-filter-label">客户筛选：</span>' +
+      `<span class="cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')">全部</span>`;
     allTmCustomers.slice(0, 20).forEach(cu => {
       const active = tmCustomerFilter === cu;
-      custFilterHtml += `<span class="tm-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')"` +
-        ` style="cursor:pointer;padding:2px 10px;border-radius:10px;font-size:11px;border:1px solid #ccc;background:${active ? '#2b6cb0;color:#fff' : '#fff'}">${cu}</span>`;
+      custFilterHtml += `<span class="cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
     });
     custFilterHtml += '</div>';
 

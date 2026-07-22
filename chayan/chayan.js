@@ -583,6 +583,9 @@ async function loadAndProcess(file, fileDate) {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = '';
 
+    // 退出分享模式（用户上传了新数据，恢复正常渲染）
+    _shareMode = false;
+
     // 填充下钻下拉选项
     const ddSelect = document.getElementById('drilldownSelect');
     if (ddSelect) {
@@ -1641,15 +1644,19 @@ function generateShareLink() {
   });
 }
 
+// 分享模式标志（防止渲染函数覆盖已注入的分享内容）
+var _shareMode = false;
+
 // 页面加载时检测 Hash 自动渲染
 function tryLoadFromHash() {
   const h = location.hash.slice(1);
   if (!h || h.length < 10) return false; // 太短不是有效数据
-  const json = b64Decode(h);
-  if (!json) return false;
+  let json;
+  try { json = b64Decode(h); } catch(e) { console.error('[share] b64Decode failed:', e); return false; }
+  if (!json) { console.error('[share] b64Decode returned null'); return false; }
   let snap;
-  try { snap = JSON.parse(json); } catch(e) { return false; }
-  if (!snap || !snap.v) return false;
+  try { snap = JSON.parse(json); } catch(e) { console.error('[share] JSON.parse failed:', e.message?.slice(0,100)); return false; }
+  if (!snap || !snap.v) { console.error('[share] invalid snapshot version'); return false; }
 
   // 隐藏上传面板，显示主内容
   const up = document.getElementById('uploadPanel');
@@ -1664,6 +1671,7 @@ function tryLoadFromHash() {
   }
 
   // 注入各 Tab HTML
+  let injected = 0;
   const injections = [
     ['ov-cards', snap.overview?.html],
     ['ov-extra', snap.overview?.extra],
@@ -1680,7 +1688,7 @@ function tryLoadFromHash() {
     ['tm-mile', snap.tomorrow?.mile]
   ];
   for (const [id, html] of injections) {
-    if (html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+    if (html && html.length > 0) { const el = document.getElementById(id); if (el) { el.innerHTML = html; injected++; } }
   }
 
   // 恢复查验 KPI
@@ -1694,11 +1702,15 @@ function tryLoadFromHash() {
     if (ins.kpiWeekTotal) { const e = document.getElementById('kpiWeekTotal'); if (e) e.textContent = ins.kpiWeekTotal; }
   }
 
+  // 激活分享模式标志
+  _shareMode = true;
+
   // 显示分享按钮（领导也可以再转发）
   const sb = document.getElementById('shareBtn');
   if (sb) sb.style.display = '';
 
-  showToast(`📋 已加载分享结果（数据日期：${snap.date || '未知'}）`, 'success');
+  showToast(`📋 已加载分享结果（${injected}个面板，数据日期：${snap.date || '未知'}）`, 'success');
+  console.log('[share] Loaded successfully, injected', injected, 'panels');
   return true;
 }
 
@@ -1836,8 +1848,8 @@ function switchTab(tabName) {
     const searchInput = document.getElementById('detailSearch');
     filterDetailTable(searchInput ? searchInput.value : '');
   }
-  // 日度监控看板
-  if (typeof Daily !== 'undefined') {
+  // 日度监控看板（分享模式下不重新渲染，保留已注入的内容）
+  if (typeof Daily !== 'undefined' && !_shareMode) {
     if (tabName === 'd_overview') Daily.renderOverview();
     if (tabName === 'd_intransit') Daily.renderIntransit();
     if (tabName === 'd_sla') Daily.renderSLA();
