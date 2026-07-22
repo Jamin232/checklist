@@ -443,11 +443,13 @@ const Daily = (function () {
   let tmCustomerFilter = '全部';   // 预警 客户筛选
 
   function setAbnCustomer(c) {
+    if (typeof _shareMode !== 'undefined' && _shareMode) { if (typeof showToast === 'function') showToast('分享视图为只读快照，客户筛选不可用，请用原系统查看', 'info'); return; }
     abnCustomerFilter = c;
     document.querySelectorAll('.abn-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
     renderAbnormal();
   }
   function setTmCustomer(c) {
+    if (typeof _shareMode !== 'undefined' && _shareMode) { if (typeof showToast === 'function') showToast('分享视图为只读快照，客户筛选不可用，请用原系统查看', 'info'); return; }
     tmCustomerFilter = c;
     document.querySelectorAll('.tm-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
     renderTomorrow();
@@ -496,10 +498,10 @@ const Daily = (function () {
       const allCustomers = [...new Set(todayRecs.filter(r => r.isAbnormal).map(r => r.customer).filter(Boolean))].sort();
       let filterBar = '<div class="cust-filter-bar">' +
         '<span class="cust-filter-label">客户筛选：</span>' +
-        `<span class="cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')">全部</span>`;
+        `<span class="cust-btn abn-cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')">全部</span>`;
       allCustomers.slice(0, 20).forEach(cu => {
         const active = abnCustomerFilter === cu;
-        filterBar += `<span class="cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
+        filterBar += `<span class="cust-btn abn-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
       });
       filterBar += '</div>';
 
@@ -655,10 +657,10 @@ const Daily = (function () {
     // 客户筛选栏（横排 flex-wrap）
     let custFilterHtml = '<div class="cust-filter-bar">' +
       '<span class="cust-filter-label">客户筛选：</span>' +
-      `<span class="cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')">全部</span>`;
+      `<span class="cust-btn tm-cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')">全部</span>`;
     allTmCustomers.slice(0, 20).forEach(cu => {
       const active = tmCustomerFilter === cu;
-      custFilterHtml += `<span class="cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
+      custFilterHtml += `<span class="cust-btn tm-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
     });
     custFilterHtml += '</div>';
 
@@ -720,11 +722,26 @@ const Daily = (function () {
   // ---------------- 初始化（占位，选择器用内联 onclick 绑定） ----------------
   function init() { _inited = true; }
 
+  // 分享链接：导出当前所有图表为图片 dataURL（canvas 内容无法随 innerHTML 序列化）
+  function getShareCharts() {
+    const out = {};
+    for (const [id, c] of Object.entries(chartMap)) {
+      if (c && typeof c.getDataURL === 'function' && !c.isDisposed()) {
+        try { out[id] = c.getDataURL({ type: 'jpeg', pixelRatio: 1, backgroundColor: '#fff' }); } catch (e) {}
+      }
+    }
+    return out;
+  }
+  function resizeAllCharts() {
+    Object.values(chartMap).forEach(c => { if (c && !c.isDisposed()) { try { c.resize(); } catch (e) {} } });
+  }
+
   // ---------------- 对外接口 ----------------
   return {
     setData, setYesterday, init,
     setCostDim, setCostMetric, setSlaPeriod,
     setAbnCustomer, setTmCustomer,
-    renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow
+    renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
+    getShareCharts, resizeAllCharts
   };
 })();

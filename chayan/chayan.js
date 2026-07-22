@@ -1619,29 +1619,107 @@ function b64Decode(s) {
   } catch(e) { return null; }
 }
 
-function generateShareLink() {
-  const snap = collectSnapshot();
-  const json = JSON.stringify(snap);
-  // URL hash 片段不发送到服务端，浏览器支持 64KB+；仅在极端情况下(>64KB)才降采样
-  let payload = json;
-  if (payload.length > 64000) {
-    // 仅裁剪最大的明细表，保留 KPI 卡片 + 核心汇总
-    snap.intransit.channelBody = '';
-    snap.intransit.agentBody = '';
-    snap.intransit.custBody = '';
-    snap.abnormal.table = '';
-    snap.cost.table = '';
-    snap.tomorrow.overdue = '';
-    payload = JSON.stringify(snap);
-  }
-  const hash = '#' + b64Encode(payload);
-  const url = location.protocol + '//' + location.host + location.pathname + hash;
-  // 复制到剪贴板
-  navigator.clipboard.writeText(url).then(() => {
-    showToast('✓ 分享链接已复制到剪贴板！发送给领导即可直接查看结果。', 'success');
-  }).catch(() => {
-    alert('分享链接：\n' + url + '\n\n请手动复制发送给领导');
+// 将图表 dataURL 二次压缩为更小的 JPEG（quality/maxW 控制体积，避免链接过长）
+function shrinkImage(dataUrl, quality, maxW) {
+  return new Promise(resolve => {
+    if (!dataUrl || !/^data:image/.test(dataUrl)) { resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let w = img.width || maxW, h = img.height || 320;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      } catch (e) { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
   });
+}
+
+// 临时显示所有 Tab 面板，渲染全部图表，捕获为图片（canvas 内容无法随 innerHTML 序列化）
+async function captureAllCharts() {
+  const panes = Array.from(document.querySelectorAll('.tab-pane'));
+  const activeBtn = document.querySelector('.tab-btn.active');
+  const activeTab = activeBtn ? activeBtn.dataset.tab : 'd_overview';
+  // 临时全部激活（visibility:hidden 保留布局宽度，使 echarts 能获取到正确尺寸）
+  panes.forEach(p => { p.style.visibility = 'hidden'; p.classList.add('active'); });
+  // 强制渲染所有面板（含图表）。日度图表不依赖查验数据，先渲染以免查验渲染异常时丢失
+  try {
+    if (typeof Daily !== 'undefined') {
+      Daily.renderOverview(); Daily.renderIntransit(); Daily.renderSLA();
+      Daily.renderAbnormal(); Daily.renderCost(); Daily.renderTomorrow();
+      Daily.resizeAllCharts();
+    }
+  } catch (e) { console.warn('[share] daily pre-capture warn:', e); }
+  try { updateAllTabs(); } catch (e) { console.warn('[share] 查验 pre-capture warn:', e); }
+  try { resizeCharts(); } catch (e) {}
+  // 等待 echarts 完成绘制
+  await new Promise(r => setTimeout(r, 160));
+  const charts = {};
+  const grab = (id, inst) => {
+    if (inst && typeof inst.getDataURL === 'function' && !inst.isDisposed()) {
+      try { charts[id] = inst.getDataURL({ type: 'jpeg', pixelRatio: 1, backgroundColor: '#fff' }); } catch (e) {}
+    }
+  };
+  for (const [id, inst] of Object.entries(chartInstances)) grab(id, inst);
+  if (typeof Daily !== 'undefined' && Daily.getShareCharts) {
+    const dc = Daily.getShareCharts();
+    for (const [id, url] of Object.entries(dc)) charts[id] = url;
+  }
+  // 压缩图片体积（JPEG 二次编码），控制链接长度
+  const out = {};
+  for (const [id, url] of Object.entries(charts)) out[id] = await shrinkImage(url, 0.55, 640);
+  // 恢复面板显示（重新只激活原来的 Tab）
+  panes.forEach(p => { p.style.visibility = ''; p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + activeTab));
+  setTimeout(resizeCharts, 60);
+  return out;
+}
+
+function generateShareLink() {
+  showToast('⏳ 正在生成分享链接（捕获图表）...', 'info');
+  (async () => {
+    // 1) 捕获所有图表为图片
+    let charts = {};
+    try { charts = await captureAllCharts(); } catch (e) { console.warn('[share] capture charts failed:', e); }
+    const snap = collectSnapshot();
+    snap.charts = charts;
+    // URL hash 片段不发送到服务端；极端情况下才精简以保证链接可用
+    const HARD_CAP = 1500000; // ~1.5MB
+    let payload = JSON.stringify(snap);
+    let shrunk = false;
+    if (payload.length > HARD_CAP) {
+      // 先丢图表图片（体积最大头），保留文字/表格/汇总
+      snap.charts = {};
+      payload = JSON.stringify(snap);
+      shrunk = true;
+    }
+    if (payload.length > HARD_CAP) {
+      snap.intransit.channelBody = '';
+      snap.intransit.agentBody = '';
+      snap.intransit.custBody = '';
+      snap.abnormal.table = '';
+      snap.cost.table = '';
+      snap.tomorrow.overdue = '';
+      payload = JSON.stringify(snap);
+      shrunk = true;
+    }
+    const hash = '#' + b64Encode(payload);
+    const url = location.protocol + '//' + location.host + location.pathname + hash;
+    navigator.clipboard.writeText(url).then(() => {
+      showToast(shrunk
+        ? '⚠️ 数据过大已精简，链接已复制（图表可能未包含，完整图表请用原系统查看）'
+        : '✓ 分享链接已复制！领导打开即可看结果（含图表），无需上传。', 'success');
+    }).catch(() => {
+      alert('分享链接：\n' + url + '\n\n请手动复制发送给领导');
+    });
+  })();
 }
 
 // 分享模式标志（防止渲染函数覆盖已注入的分享内容）
@@ -1689,6 +1767,15 @@ function tryLoadFromHash() {
   ];
   for (const [id, html] of injections) {
     if (html && html.length > 0) { const el = document.getElementById(id); if (el) { el.innerHTML = html; injected++; } }
+  }
+
+  // 注入图表图片（canvas 内容已序列化为 <img>；分享视图下图表不可交互，仅展示）
+  for (const [id, url] of Object.entries(snap.charts || {})) {
+    const el = document.getElementById(id);
+    if (el && url) {
+      el.innerHTML = `<img src="${url}" style="width:100%;max-width:100%;display:block;border-radius:6px" alt="chart">`;
+      injected++;
+    }
   }
 
   // 恢复查验 KPI
@@ -1837,25 +1924,27 @@ function switchTab(tabName) {
   currentView = tabName;
   // 先 resize 恢复尺寸（切换回来时容器可能刚从 display:none 恢复）
   setTimeout(() => resizeCharts(), 50);
-  // 重新渲染图表
-  if (tabName === 'dashboard') updateDashboardTab();
-  if (tabName === 'channel') updateChannelTab();
-  if (tabName === 'agent') updateAgentTab();
-  if (tabName === 'drilldown') updateDrilldownTab();
-  if (tabName === 'alert') {
-    updateAlertTab();
-    // 同时刷新明细表格
-    const searchInput = document.getElementById('detailSearch');
-    filterDetailTable(searchInput ? searchInput.value : '');
-  }
-  // 日度监控看板（分享模式下不重新渲染，保留已注入的内容）
-  if (typeof Daily !== 'undefined' && !_shareMode) {
-    if (tabName === 'd_overview') Daily.renderOverview();
-    if (tabName === 'd_intransit') Daily.renderIntransit();
-    if (tabName === 'd_sla') Daily.renderSLA();
-    if (tabName === 'd_abnormal') Daily.renderAbnormal();
-    if (tabName === 'd_cost') Daily.renderCost();
-    if (tabName === 'd_tomorrow') Daily.renderTomorrow();
+  // 分享模式下不重新渲染任何面板（records/todayRecs 为空会把已注入的快照清空），直接保留注入结果
+  if (!_shareMode) {
+    if (tabName === 'dashboard') updateDashboardTab();
+    if (tabName === 'channel') updateChannelTab();
+    if (tabName === 'agent') updateAgentTab();
+    if (tabName === 'drilldown') updateDrilldownTab();
+    if (tabName === 'alert') {
+      updateAlertTab();
+      // 同时刷新明细表格
+      const searchInput = document.getElementById('detailSearch');
+      filterDetailTable(searchInput ? searchInput.value : '');
+    }
+    // 日度监控看板（分享模式下同样跳过，保留已注入的内容）
+    if (typeof Daily !== 'undefined') {
+      if (tabName === 'd_overview') Daily.renderOverview();
+      if (tabName === 'd_intransit') Daily.renderIntransit();
+      if (tabName === 'd_sla') Daily.renderSLA();
+      if (tabName === 'd_abnormal') Daily.renderAbnormal();
+      if (tabName === 'd_cost') Daily.renderCost();
+      if (tabName === 'd_tomorrow') Daily.renderTomorrow();
+    }
   }
   // 再次 resize 确保渲染后尺寸正确
   setTimeout(resizeCharts, 150);
