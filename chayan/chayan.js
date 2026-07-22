@@ -74,6 +74,10 @@ function parseDate(val) {
   m = s.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})/);
   if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
 
+  // 3b) 中文月日（无年）：7月9日 / 7月9
+  m = s.match(/^(\d{1,2})月(\d{1,2})日?$/);
+  if (m) { const y = new Date().getFullYear(); return new Date(y, +m[1] - 1, +m[2]); }
+
   // 4) 兜底：交给原生解析（处理 ISO 等）
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
@@ -135,6 +139,27 @@ function safeNum(val) {
   return isNaN(n) ? 0 : n;
 }
 
+// 按子串模糊匹配列名（Excel 表头可能含换行符、额外文字如"开始时间"等）
+function findCol(row, ...subs) {
+  if (!row) return '';
+  const keys = Object.keys(row);
+  return keys.find(k => subs.every(s => String(k).includes(s))) || '';
+}
+// 构建列名映射（在 processData 入口调用一次，后续用 map.key 访问）
+function buildColMap(rows) {
+  if (!rows || !rows.length) return {};
+  return {
+    sub: findCol(rows[0], '分出仓单号'),
+    remark: findCol(rows[0], '状态备注'),
+    country: findCol(rows[0], '国家'),
+    type: findCol(rows[0], '类型'),
+    logi: findCol(rows[0], '素芸物流渠道'),
+    ship: findCol(rows[0], '仓库出货日期'),
+    domInspect: findCol(rows[0], '国内', '查验'),
+    destInspect: findCol(rows[0], '目的地', '查验'),
+  };
+}
+
 // ===================== Excel 读取 =====================
 
 function readExcel(file) {
@@ -167,6 +192,9 @@ function processData(rows) {
   let skippedNoDate = 0; // 因缺少/无法解析发货日期而未参与周度统计的行数
   const seenSubTickets = new Set(); // 全局分出仓单号去重
 
+  // 构建列名映射（模糊匹配，兼容表头变化）
+  const map = buildColMap(rows);
+
   for (const row of rows) {
     // 分出仓单号 -> 按换行分割，全局去重，去重后计数为票数
     const subTicketStr = safeStr(row['分出仓单号']);
@@ -190,8 +218,8 @@ function processData(rows) {
     let isForeign = remark.includes('国外查验');
 
     // 补充判定：若状态备注未标记但时间列有值（日期/数字），仍视为查验
-    const destInspectTimeRaw = safeStr(row['目的地查验时间']);
-    const domInspectTimeRaw = safeStr(row['国内查验时间']);
+    const destInspectTimeRaw = safeStr(row[map.destInspect]);
+    const domInspectTimeRaw = safeStr(row[map.domInspect]);
     if (!isDomestic && domInspectTimeRaw.trim() !== '') isDomestic = true;
     if (!isForeign && destInspectTimeRaw.trim() !== '') isForeign = true;
 
@@ -228,8 +256,8 @@ function processData(rows) {
     }
 
     // 查验时效（BI/BJ列，数值型为天数）
-    const destInspectTime = safeNum(row['目的地查验时间']);
-    const domInspectTime = safeNum(row['国内查验时间']);
+    const destInspectTime = safeNum(row[map.destInspect]);
+    const domInspectTime = safeNum(row[map.domInspect]);
     const avgInspectTime = (destInspectTime > 0 && domInspectTime > 0)
       ? (destInspectTime + domInspectTime) / 2
       : (destInspectTime > 0 ? destInspectTime : (domInspectTime > 0 ? domInspectTime : 0));
@@ -1562,18 +1590,49 @@ function exportToExcel() {
 // 收集当前所有 Tab 的聚合数据快照
 function collectSnapshot() {
   const snap = {
-    v: 1, // 快照版本
+    v: 2, // 快照版本（v2 新增查验面板完整快照）
     date: document.getElementById('headerDate')?.textContent || '',
-    // 查验 KPI
-    inspection: {
+    // ---- 查验看板面板（含 KPI + 图表 + 表格）----
+    inspect: {
       kpiTotal: document.getElementById('kpiTotal')?.textContent || '',
       kpiDomestic: document.getElementById('kpiDomestic')?.textContent || '',
       kpiForeign: document.getElementById('kpiForeign')?.textContent || '',
       kpiOverall: document.getElementById('kpiOverall')?.textContent || '',
       kpiWeekRate: document.getElementById('kpiWeekRate')?.textContent || '',
-      kpiWeekTotal: document.getElementById('kpiWeekTotal')?.textContent || ''
+      kpiWeekTotal: document.getElementById('kpiWeekTotal')?.textContent || '',
+      trendChart: document.getElementById('trendChart')?.getAttribute('_data') || '',
+      channelTags: document.getElementById('channelTags')?.innerHTML || '',
+      channelTrendChart: document.getElementById('channelTrendChart')?.getAttribute('_data') || ''
     },
-    // 日度总览
+    channel: {
+      chart: document.getElementById('channelChart')?.getAttribute('_data') || '',
+      usSubChart: document.getElementById('usSubChart')?.getAttribute('_data') || '',
+      compareBody: document.getElementById('channelCompareBody')?.innerHTML || '',
+      table: document.getElementById('channelTable')?.innerHTML || ''
+    },
+    agent: {
+      chart: document.getElementById('agentChart')?.getAttribute('_data') || '',
+      compareBody: document.getElementById('agentCompareBody')?.innerHTML || '',
+      heatmap: document.getElementById('agentChannelHeatmap')?.getAttribute('_data') || ''
+    },
+    drilldown: {
+      resultStyle: document.getElementById('drilldownResult')?.style.display || '',
+      title: document.getElementById('drilldownTitle')?.textContent || '',
+      chart: document.getElementById('drilldownChart')?.getAttribute('_data') || '',
+      trendTitle: document.getElementById('drilldownTrendTitle')?.textContent || '',
+      trendChart: document.getElementById('drilldownTrendChart')?.getAttribute('_data') || '',
+      tableBody: document.getElementById('drilldownTableBody')?.innerHTML || ''
+    },
+    alert: {
+      highInput: document.getElementById('highRiskInput')?.value || '',
+      midInput: document.getElementById('midRiskInput')?.value || '',
+      alertTableBody: document.getElementById('alertTableBody')?.innerHTML || '',
+      productTable: document.getElementById('productTable')?.innerHTML || '',
+      customerTable: document.getElementById('customerTable')?.innerHTML || '',
+      detailSearch: document.getElementById('detailSearch')?.value || '',
+      detailTableBody: document.getElementById('detailTableBody')?.innerHTML || ''
+    },
+    // ---- 日度监控面板 ----
     overview: { html: document.getElementById('ov-cards')?.innerHTML || '', extra: document.getElementById('ov-extra')?.innerHTML || '' },
     // 在途
     intransit: {
@@ -1701,12 +1760,21 @@ function generateShareLink() {
       shrunk = true;
     }
     if (payload.length > HARD_CAP) {
+      // 再丢明细表（保留 KPI + 图表汇总）
       snap.intransit.channelBody = '';
       snap.intransit.agentBody = '';
       snap.intransit.custBody = '';
       snap.abnormal.table = '';
       snap.cost.table = '';
       snap.tomorrow.overdue = '';
+      snap.channel.compareBody = '';
+      snap.channel.table = '';
+      snap.agent.compareBody = '';
+      snap.drilldown.tableBody = '';
+      snap.alert.alertTableBody = '';
+      snap.alert.productTable = '';
+      snap.alert.customerTable = '';
+      snap.alert.detailTableBody = '';
       payload = JSON.stringify(snap);
       shrunk = true;
     }
@@ -1748,9 +1816,10 @@ function tryLoadFromHash() {
     if (el) el.textContent = snap.date;
   }
 
-  // 注入各 Tab HTML
+  // 注入各面板 HTML（日度 + 查验）
   let injected = 0;
   const injections = [
+    // --- 日度监控 ---
     ['ov-cards', snap.overview?.html],
     ['ov-extra', snap.overview?.extra],
     ['it-summary', snap.intransit?.summary],
@@ -1763,13 +1832,31 @@ function tryLoadFromHash() {
     ['cost-note', snap.cost?.note],
     ['cost-table', snap.cost?.table],
     ['tm-overdue', snap.tomorrow?.overdue],
-    ['tm-mile', snap.tomorrow?.mile]
+    ['tm-mile', snap.tomorrow?.mile],
+    // --- 查验看板：总览 ---
+    ['trendChart', null], // 占位（图表由 charts 统一注入）
+    ['channelTags', snap.inspect?.channelTags],
+    ['channelTrendChart', null],
+    // --- 查验看板：渠道 ---
+    ['channelCompareBody', snap.channel?.compareBody],
+    ['channelTable', snap.channel?.table],
+    // --- 查验看板：代理 ---
+    ['agentCompareBody', snap.agent?.compareBody],
+    // --- 查验看板：穿透 ---
+    ['drilldownTitle', snap.drilldown?.title],
+    ['drilldownTrendTitle', snap.drilldown?.trendTitle],
+    ['drilldownTableBody', snap.drilldown?.tableBody],
+    // --- 查验看板：预警 ---
+    ['alertTableBody', snap.alert?.alertTableBody],
+    ['productTable', snap.alert?.productTable],
+    ['customerTable', snap.alert?.customerTable],
+    ['detailTableBody', snap.alert?.detailTableBody]
   ];
   for (const [id, html] of injections) {
     if (html && html.length > 0) { const el = document.getElementById(id); if (el) { el.innerHTML = html; injected++; } }
   }
 
-  // 注入图表图片（canvas 内容已序列化为 <img>；分享视图下图表不可交互，仅展示）
+  // 注入图表图片（canvas → <img>；分享视图下仅展示不可交互）
   for (const [id, url] of Object.entries(snap.charts || {})) {
     const el = document.getElementById(id);
     if (el && url) {
@@ -1778,15 +1865,33 @@ function tryLoadFromHash() {
     }
   }
 
-  // 恢复查验 KPI
-  if (snap.inspection) {
-    const ins = snap.inspection;
+  // 恢复查验 KPI 数字
+  const ins = snap.inspect || snap.inspection;
+  if (ins) {
     if (ins.kpiTotal) { const e = document.getElementById('kpiTotal'); if (e) e.textContent = ins.kpiTotal; }
     if (ins.kpiDomestic) { const e = document.getElementById('kpiDomestic'); if (e) e.textContent = ins.kpiDomestic; }
     if (ins.kpiForeign) { const e = document.getElementById('kpiForeign'); if (e) e.textContent = ins.kpiForeign; }
     if (ins.kpiOverall) { const e = document.getElementById('kpiOverall'); if (e) e.textContent = ins.kpiOverall; }
     if (ins.kpiWeekRate) { const e = document.getElementById('kpiWeekRate'); if (e) e.textContent = ins.kpiWeekRate; }
     if (ins.kpiWeekTotal) { const e = document.getElementById('kpiWeekTotal'); if (e) e.textContent = ins.kpiWeekTotal; }
+  }
+
+  // 恢复查验面板状态（穿透结果区域、预警阈值、搜索词）
+  if (snap.drilldown?.resultStyle !== undefined) {
+    const el = document.getElementById('drilldownResult');
+    if (el) el.style.display = snap.drilldown.resultStyle;
+  }
+  if (snap.alert?.highInput !== undefined) {
+    const el = document.getElementById('highRiskInput');
+    if (el) el.value = snap.alert.highInput;
+  }
+  if (snap.alert?.midInput !== undefined) {
+    const el = document.getElementById('midRiskInput');
+    if (el) el.value = snap.alert.midInput;
+  }
+  if (snap.alert?.detailSearch !== undefined) {
+    const el = document.getElementById('detailSearch');
+    if (el) el.value = snap.alert.detailSearch;
   }
 
   // 激活分享模式标志

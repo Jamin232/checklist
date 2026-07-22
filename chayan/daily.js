@@ -63,6 +63,8 @@ const Daily = (function () {
     if (m) return new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
     m = s.match(/^(\d{1,2})[-/.](\d{1,2})$/);
     if (m) return makeMDate(+m[1], +m[2]); // 月/日（无年）
+    m = s.match(/^(\d{1,2})月(\d{1,2})日?$/);
+    if (m) return makeMDate(+m[1], +m[2]); // 月日（中文格式，无年）
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   }
@@ -123,8 +125,8 @@ const Daily = (function () {
       ship: find('仓库出货日期'),
       status: find('货物状态'),
       remark: find('状态备注'),
-      dom: find('国内查验时间'),
-      dest: find('目的地查验时间'),
+      dom: find('国内', '查验'),
+      dest: find('目的地', '查验'),
       main: find('主出仓单号'),
       type: find('类型'),
       logi: find('素芸物流渠道'),
