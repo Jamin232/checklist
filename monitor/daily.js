@@ -160,8 +160,12 @@ const Daily = (function () {
       const shipDate = parseDate(row[map.ship]);
       const goodsStatus = safeStr(row[map.status]);
       const remark = safeStr(row[map.remark]);
-      const domInspectDate = parseDate(row[map.dom]);
-      const destInspectDate = parseDate(row[map.dest]);
+      const domInspectRaw = parseDate(row[map.dom]);
+      const destInspectRaw = parseDate(row[map.dest]);
+      // 查验日期合理性校验：国内查验时间列常含时长数字(如1,23天)而非日期，
+      // 被parseDate误解析为1899/1900年假日期 → 排除年份<2020的值
+      const domInspectDate = (domInspectRaw && domInspectRaw.getFullYear() >= 2020) ? domInspectRaw : null;
+      const destInspectDate = (destInspectRaw && destInspectRaw.getFullYear() >= 2020) ? destInspectRaw : null;
 
       const isInspecting = goodsStatus.includes('查验中'); // 仅海关查验（不含快递"开查中"）
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w));
