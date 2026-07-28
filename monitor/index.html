@@ -30,6 +30,9 @@
     <div class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">渠道占比</div>
     <div class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</div>
     <div class="tab-sep"></div>
+    <!-- ═══ 仓配监控（独立数据源：仓配每日报表） ═══ -->
+    <div class="tab-btn" data-tab="warehouse" onclick="switchTab('warehouse')">仓配监控</div>
+    <div class="tab-sep"></div>
     <!-- ═══ 查验监控（明细） ═══ -->
     <div class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">查验总览</div>
     <div class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</div>
@@ -38,6 +41,7 @@
     <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
     <button class="export-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
     <button class="export-btn" id="shareBtn" onclick="generateShareLink()" style="display:none">🔗 分享链接</button>
+    <button class="export-btn" id="uploadTrackBtn" onclick="openTrackUpload()">📊 上传跟踪表</button>
   </div>
 
   <!-- 上传面板（全屏覆盖，上传后隐藏） -->
@@ -57,6 +61,10 @@
         若备注未标记但"国内查验时间"/"目的地查验时间"列有值，仍视为对应查验（补充判定）。<br>
         起运港查验反映即时风险，目的港查验作为总体参考（存在滞后）。<br>
         周度统计按<b>中国日历周</b>划分：<b>周一为一周起点，周日为终点</b>（周 key 中括号内为当周周一日期，如 2026-W28 (07/13)）。
+      </div>
+      <div class="upload-warehouse-entry">
+        <span>暂无产品跟踪表，只想看仓配发运？</span>
+        <button class="export-btn" id="enterWarehouseBtn" onclick="enterWarehouseOnly()">📦 仅查看仓配监控 →</button>
       </div>
     </div>
   </div>
@@ -402,6 +410,95 @@
       </div>
     </div>
 
+    <!-- ===== 仓配监控（独立数据源：仓配每日报表） ===== -->
+    <div id="pane-warehouse" class="tab-pane">
+      <!-- 上传区（无数据时显示） -->
+      <div id="whUploadZone" class="wh-upload-zone">
+        <div class="upload-icon">📦</div>
+        <div class="upload-title">上传仓配每日报表</div>
+        <div class="upload-desc">导入 <b>仓配每日报表（仓库+物流数据）.xlsx</b><br>按月份分 sheet，自动解析 来货 / 入库 / 调拨 / 装箱 / 交运 全流程指标<br>与「产品跟踪表」相互独立，可单独上传</div>
+        <div class="upload-zone wh-dropzone" id="whDropZone">
+          <div>📁 点击或拖拽文件到此处</div>
+          <div class="upload-hint">仅支持 .xlsx 格式</div>
+        </div>
+        <input type="file" id="whFileInput" accept=".xlsx" style="display:none">
+      </div>
+
+      <!-- 看板（有数据时显示） -->
+      <div id="whDashboard" class="hidden">
+        <div class="wh-toolbar">
+          <label>月份：<select id="whMonthSelect"></select></label>
+          <label>仓库视角：
+            <select id="whWarehouseSelect"><option value="combined">两仓合计</option></select>
+          </label>
+          <button class="export-btn" id="whExportBtn">📥 导出结论</button>
+        </div>
+
+        <div class="section conclusions">
+          <div class="section-header"><div class="section-title">📊 自动分析结论 <span class="tag" id="conclusionTag"></span></div></div>
+          <div id="conclusionText"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><div class="section-title">供应链流程漏斗（最新日）</div></div>
+          <div class="flow" id="flowBox"></div>
+          <div class="small" id="flowNote"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><div class="section-title">关键指标 <span class="tag">红色 = 异常信号</span></div></div>
+          <div class="kpis" id="kpiBox"></div>
+        </div>
+
+        <div class="grid2">
+          <div class="section">
+            <div class="section-header"><div class="section-title">未交运 / 未入库 / 调拨未完成 趋势</div></div>
+            <div class="chart-container" id="c_backlog"></div>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">当日交运 vs 当日未交运</div></div>
+            <div class="chart-container" id="c_ship"></div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="section">
+            <div class="section-header"><div class="section-title">入库 → 装箱 → 交运 产出趋势</div></div>
+            <div class="chart-container" id="c_throughput"></div>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">截单未完成装箱（按渠道）</div></div>
+            <div class="chart-container" id="c_cutoff"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><div class="section-title">仓库对比（最新日）</div></div>
+          <div class="chart-container" id="c_wh"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><div class="section-title">事业部异常排名（最新日）</div></div>
+          <div class="table-wrap">
+            <table class="data-table" id="unitTable">
+              <thead><tr><th>事业部</th><th>当日未交运</th><th>调拨未完成</th><th>截单前装箱未交运</th><th>备注</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><div class="section-title">完整 14 字段日报（最新日）</div></div>
+          <div class="table-wrap">
+            <table class="data-table" id="dailyTable">
+              <thead><tr><th>字段</th><th>数值</th><th>说明</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="footer-space"></div>
   </div>
 </div>
@@ -414,6 +511,7 @@
 
 <script src="chayan.js"></script>
 <script src="daily.js"></script>
+<script src="warehouse.js"></script>
 <script>
 // 初始化日期显示
 (function(){
@@ -421,6 +519,7 @@
   const wds = ['周日','周一','周二','周三','周四','周五','周六'];
   document.getElementById('headerDate').textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
   if (window.Daily) Daily.init();
+  if (window.Warehouse) Warehouse.init();
 })();
 </script>
 </body>

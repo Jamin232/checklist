@@ -1985,6 +1985,10 @@ function initEvents() {
   if (searchInput) {
     searchInput.addEventListener('input', () => filterDetailTable(searchInput.value));
   }
+
+  // 仓配监控入口（独立于产品跟踪表）
+  const enterWh = document.getElementById('enterWarehouseBtn');
+  if (enterWh) enterWh.addEventListener('click', enterWarehouseOnly);
 }
 
 function filterDetailTable(keyword) {
@@ -2019,6 +2023,22 @@ function filterDetailTable(keyword) {
   }
 }
 
+// ===================== 仓配监控入口 =====================
+// 重新打开产品跟踪表上传面板（随时可补传，不影响已加载的仓配数据）
+function openTrackUpload() {
+  const up = document.getElementById('uploadPanel');
+  if (up) up.style.display = 'flex';
+}
+// 仅查看仓配：隐藏产品跟踪表上传面板，直接进入仓配标签（无需先传产品跟踪表）
+function enterWarehouseOnly() {
+  const up = document.getElementById('uploadPanel');
+  const mc = document.getElementById('mainContent');
+  if (up) up.style.display = 'none';
+  if (mc) mc.style.display = 'block';
+  _shareMode = false;
+  switchTab('warehouse');
+}
+
 // ===================== Tab 切换 =====================
 
 function switchTab(tabName) {
@@ -2041,6 +2061,9 @@ function switchTab(tabName) {
       const searchInput = document.getElementById('detailSearch');
       filterDetailTable(searchInput ? searchInput.value : '');
     }
+    // 仓配监控看板（独立数据源：仓配每日报表）
+    if (tabName === 'warehouse' && typeof Warehouse !== 'undefined') Warehouse.render();
+
     // 日度监控看板（分享模式下同样跳过，保留已注入的内容）
     if (typeof Daily !== 'undefined') {
       if (tabName === 'd_overview') Daily.renderOverview();
