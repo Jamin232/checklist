@@ -1666,16 +1666,53 @@ function collectSnapshot() {
   return snap;
 }
 
-// Base64 编码（URL-safe，无 padding）
-function b64Encode(str) {
-  try {
-    return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  } catch(e) { return ''; }
+// ===================== Base64 / 压缩（分享链接） =====================
+// 字节级 Base64（URL-safe，无 padding）——用于压缩后的二进制载荷
+function bytesToB64(bytes) {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function b64Decode(s) {
+function b64ToBytes(s) {
+  s = (s || '').replace(/[^A-Za-z0-9\-_]/g, ''); // 去除复制时混入的换行/空格等
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '='; // 补回 padding
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+// 文本级 Base64（UTF-8 安全，兼容旧版未压缩链接）
+function b64EncodeStr(str) {
+  try { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  catch (e) { return ''; }
+}
+function b64DecodeStr(s) {
+  try { return decodeURIComponent(escape(atob((s || '').replace(/[^A-Za-z0-9\-_]/g, '').replace(/-/g, '+').replace(/_/g, '/')))); }
+  catch (e) { return null; }
+}
+// gzip 压缩 / 解压（浏览器原生 CompressionStream；不支持时降级为不压缩）
+async function gzipStr(str) {
+  if (typeof CompressionStream === 'undefined') return null;
   try {
-    return decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
-  } catch(e) { return null; }
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    writer.write(new TextEncoder().encode(str));
+    writer.close();
+    const buf = await new Response(cs.readable).arrayBuffer();
+    return new Uint8Array(buf);
+  } catch (e) { console.warn('[share] gzip failed:', e); return null; }
+}
+async function gunzipBytes(bytes) {
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const buf = await new Response(ds.readable).arrayBuffer();
+  return new TextDecoder().decode(buf);
 }
 
 // 将图表 dataURL 二次压缩为更小的 JPEG（quality/maxW 控制体积，避免链接过长）
@@ -1742,48 +1779,65 @@ async function captureAllCharts() {
 }
 
 function generateShareLink() {
-  showToast('⏳ 正在生成分享链接（捕获图表）...', 'info');
+  showToast('⏳ 正在生成分享链接（压缩并捕获图表）...', 'info');
   (async () => {
     // 1) 捕获所有图表为图片
     let charts = {};
     try { charts = await captureAllCharts(); } catch (e) { console.warn('[share] capture charts failed:', e); }
     const snap = collectSnapshot();
     snap.charts = charts;
-    // URL hash 片段不发送到服务端；极端情况下才精简以保证链接可用
-    const HARD_CAP = 1500000; // ~1.5MB
     let payload = JSON.stringify(snap);
+
+    // 2) 优先 gzip 压缩整个快照（文本/表格可缩短 5~10 倍）
+    let compressed = await gzipStr(payload);
     let shrunk = false;
-    if (payload.length > HARD_CAP) {
-      // 先丢图表图片（体积最大头），保留文字/表格/汇总
+    // 若压缩后仍过大（图表图片已压缩、gzip 难再缩），去掉图表图片再压一次，保证链接可加载
+    if (compressed && compressed.length > 450000) {
       snap.charts = {};
       payload = JSON.stringify(snap);
+      compressed = await gzipStr(payload);
       shrunk = true;
     }
-    if (payload.length > HARD_CAP) {
-      // 再丢明细表（保留 KPI + 图表汇总）
-      snap.intransit.channelBody = '';
-      snap.intransit.agentBody = '';
-      snap.intransit.custBody = '';
-      snap.abnormal.table = '';
-      snap.cost.table = '';
-      snap.tomorrow.overdue = '';
-      snap.channel.compareBody = '';
-      snap.channel.table = '';
-      snap.agent.compareBody = '';
-      snap.drilldown.tableBody = '';
-      snap.alert.alertTableBody = '';
-      snap.alert.productTable = '';
-      snap.alert.customerTable = '';
-      snap.alert.detailTableBody = '';
-      payload = JSON.stringify(snap);
-      shrunk = true;
+    let hash, mode;
+    if (compressed && compressed.length > 0) {
+      hash = '#Z' + bytesToB64(compressed);
+      mode = 'gzip';
+    } else {
+      // 3) 降级：浏览器不支持 CompressionStream，走旧版不压缩逻辑（极端情况精简）
+      const HARD_CAP = 1500000; // ~1.5MB
+      if (payload.length > HARD_CAP) {
+        snap.charts = {};
+        payload = JSON.stringify(snap);
+        shrunk = true;
+      }
+      if (payload.length > HARD_CAP) {
+        snap.intransit.channelBody = '';
+        snap.intransit.agentBody = '';
+        snap.intransit.custBody = '';
+        snap.abnormal.table = '';
+        snap.cost.table = '';
+        snap.tomorrow.overdue = '';
+        snap.channel.compareBody = '';
+        snap.channel.table = '';
+        snap.agent.compareBody = '';
+        snap.drilldown.tableBody = '';
+        snap.alert.alertTableBody = '';
+        snap.alert.productTable = '';
+        snap.alert.customerTable = '';
+        snap.alert.detailTableBody = '';
+        payload = JSON.stringify(snap);
+        shrunk = true;
+      }
+      hash = '#R' + b64EncodeStr(payload);
+      mode = 'raw';
     }
-    const hash = '#' + b64Encode(payload);
     const url = location.protocol + '//' + location.host + location.pathname + hash;
     navigator.clipboard.writeText(url).then(() => {
       showToast(shrunk
         ? '⚠️ 数据过大已精简，链接已复制（图表可能未包含，完整图表请用原系统查看）'
-        : '✓ 分享链接已复制！领导打开即可看结果（含图表），无需上传。', 'success');
+        : (mode === 'gzip'
+            ? '✓ 分享链接已复制（已压缩，含图表，领导打开免上传）'
+            : '✓ 分享链接已复制！领导打开即可看结果（含图表），无需上传。'), 'success');
     }).catch(() => {
       alert('分享链接：\n' + url + '\n\n请手动复制发送给领导');
     });
@@ -1794,14 +1848,26 @@ function generateShareLink() {
 var _shareMode = false;
 
 // 页面加载时检测 Hash 自动渲染
-function tryLoadFromHash() {
+async function tryLoadFromHash() {
   const h = location.hash.slice(1);
   if (!h || h.length < 10) return false; // 太短不是有效数据
+  // 识别压缩标记：Z=Gzip  R=未压缩(新)  无标记=旧版未压缩
+  let s = h, mode = 'legacy';
+  if (s[0] === 'Z') { mode = 'gzip'; s = s.slice(1); }
+  else if (s[0] === 'R') { mode = 'raw'; s = s.slice(1); }
+  // 解码
   let json;
-  try { json = b64Decode(h); } catch(e) { console.error('[share] b64Decode failed:', e); return false; }
-  if (!json) { console.error('[share] b64Decode returned null'); return false; }
+  try {
+    if (mode === 'gzip') {
+      const bytes = b64ToBytes(s);
+      json = await gunzipBytes(bytes);
+    } else {
+      json = b64DecodeStr(s);
+    }
+  } catch (e) { console.error('[share] decode failed:', e); return false; }
+  if (!json) { console.error('[share] decode returned null'); return false; }
   let snap;
-  try { snap = JSON.parse(json); } catch(e) { console.error('[share] JSON.parse failed:', e.message?.slice(0,100)); return false; }
+  try { snap = JSON.parse(json); } catch (e) { console.error('[share] JSON.parse failed:', e.message?.slice(0,100)); return false; }
   if (!snap || !snap.v) { console.error('[share] invalid snapshot version'); return false; }
 
   // 隐藏上传面板，显示主内容
@@ -2080,8 +2146,8 @@ function switchTab(tabName) {
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', () => {
-  // 优先尝试从分享链接加载（领导免上传）
-  if (tryLoadFromHash()) return;
-  initEvents();
-  // 默认显示上传页面，等待用户上传数据
+  // 优先尝试从分享链接加载（领导免上传）；加载失败（链接损坏/被截断）则回退上传界面
+  tryLoadFromHash().then(ok => {
+    if (!ok) initEvents();
+  }).catch(() => initEvents());
 });
