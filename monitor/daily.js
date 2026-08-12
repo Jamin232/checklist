@@ -48,9 +48,13 @@ const Daily = (function () {
   }
   function parseDate(val) {
     if (!val) return null;
-    if (val instanceof Date) return new Date(Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate()));
+    if (val instanceof Date) {
+      // SheetJS(cellDates:true) 返回的是浏览器本地时区表示的 Date（如中国 8/5 0:00 存为 2026-08-04T16:00:00Z）。
+      // 必须用本地 getter 读年月日，否则 UTC-8 下会把中国日期看早一天。
+      return new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate()));
+    }
     if (typeof val === 'number') {
-      // Excel 序列号
+      // Excel 序列号转时间戳本质为 UTC，保持 UTC getter
       const d = new Date((val - 25569) * 86400 * 1000);
       return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
@@ -67,7 +71,18 @@ const Daily = (function () {
     m = s.match(/^(\d{1,2})月(\d{1,2})日?$/);
     if (m) return makeMDate(+m[1], +m[2]); // 月日（中文格式，无年）
     const d = new Date(s);
-    return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  }
+  // 从货物状态文本中提取日期（如 "8/5查验中" / "8月5日查验中"），作为查验开始时间兜底。
+  // 仅当状态含"查验"字样时才解析，避免把 "8/12运输中" 等普通状态误判为查验时间。
+  function parseDateFromStatus(statusText) {
+    const s = safeStr(statusText);
+    if (!s || !s.includes('查验')) return null;
+    let m = s.match(/^(\d{1,2})[-\/.](\d{1,2})/);
+    if (m) return makeMDate(+m[1], +m[2]);
+    m = s.match(/^(\d{1,2})月(\d{1,2})日?/);
+    if (m) return makeMDate(+m[1], +m[2]);
+    return null;
   }
   // 由月/日构造日期（处理跨年）
   function makeMDate(month, day) {
@@ -81,6 +96,12 @@ const Daily = (function () {
   function sameDay(a, b) {
     // 全程日期均为 UTC 零点构造，用 UTC getter 比较，避免本地时区跨日错位（如 UTC-8）
     return a && b && a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() === b.getUTCDate();
+  }
+  // 日期 d 是否在 [ref - n, ref] 的闭区间内（含当天及前 n 天）
+  function withinLastNDays(d, ref, n) {
+    if (!d || !ref) return false;
+    const diff = dayDiff(ref, d);
+    return diff >= 0 && diff <= n;
   }
   // DST 安全的整天数差：返回 a - b 的天数（基于 UTC  midnight，避免夏令时 23/25 小时误差）
   function dayDiff(a, b) {
@@ -164,8 +185,13 @@ const Daily = (function () {
       const destInspectRaw = parseDate(row[map.dest]);
       // 查验日期合理性校验：国内查验时间列常含时长数字(如1,23天)而非日期，
       // 被parseDate误解析为1899/1900年假日期 → 排除年份<2020的值
-      const domInspectDate = (domInspectRaw && domInspectRaw.getFullYear() >= 2020) ? domInspectRaw : null;
-      const destInspectDate = (destInspectRaw && destInspectRaw.getFullYear() >= 2020) ? destInspectRaw : null;
+      let domInspectDate = (domInspectRaw && domInspectRaw.getFullYear() >= 2020) ? domInspectRaw : null;
+      let destInspectDate = (destInspectRaw && destInspectRaw.getFullYear() >= 2020) ? destInspectRaw : null;
+      // 兜底：货物状态里常包含日期（如 "8/5查验中"），若时间列为空则用它作为查验开始时间
+      const statusDate = parseDateFromStatus(goodsStatus);
+      if (statusDate && !domInspectDate && !destInspectDate) {
+        domInspectDate = statusDate; // 仅作为计算查验开始时间的兜底，不指定是国内还是目的地
+      }
 
       const isInspecting = goodsStatus.includes('查验中'); // 仅海关查验（不含快递"开查中"）
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w));
@@ -268,9 +294,10 @@ const Daily = (function () {
     const inT = groupSum(inTransit, () => 'all')['all'] || { tickets: 0, weight: 0, volume: 0 };
     const abnormal = todayRecs.filter(r => r.isAbnormal);
     const inspecting = todayRecs.filter(r => r.isInspecting);
+    // 数据通常 T+1 生成，8/12 文件里 8/12 的查验记录极少；改为统计近两日（当日+昨日）新增
     const newInspect = todayRecs.filter(r =>
-      (r.domInspectDate && sameDay(r.domInspectDate, TODAY)) ||
-      (r.destInspectDate && sameDay(r.destInspectDate, TODAY))).length;
+      (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
+      (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1))).length;
 
     // 在途超期(>5天)
     let overdue5 = 0;
@@ -290,7 +317,7 @@ const Daily = (function () {
     const cards = [
       { num: inT.tickets, label: '在途票数', sub: `${(inT.weight / 1000).toFixed(1)}吨 / ${inT.volume.toFixed(1)}方`, cls: 'ov-intransit' },
       { num: inspecting.length, label: '查验进行中', sub: `异常单 ${abnormal.length}`, cls: 'ov-abn' },
-      { num: newInspect, label: '当日新增查验', sub: fmtMD(TODAY), cls: 'ov-new' },
+      { num: newInspect, label: '近两日新增查验', sub: `${fmtMD(new Date(Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate() - 1)))}-${fmtMD(TODAY)}`, cls: 'ov-new' },
       { num: overdue5, label: '在途超期>5天', sub: '未妥投', cls: 'ov-overdue' },
       { num: tom['到港'] + tom['清关'] + tom['派送'], label: '明日到港/清关/派送', sub: `到${tom['到港']}/清${tom['清关']}/派${tom['派送']}`, cls: 'ov-tom' }
     ];
@@ -326,7 +353,7 @@ const Daily = (function () {
     for (const r of recs) {
       if (r.isInspecting) inspecting++;
       if (r.isAbnormal) abnormal++;
-      if ((r.domInspectDate && sameDay(r.domInspectDate, ref)) || (r.destInspectDate && sameDay(r.destInspectDate, ref))) newInspect++;
+      if ((r.domInspectDate && withinLastNDays(r.domInspectDate, ref, 1)) || (r.destInspectDate && withinLastNDays(r.destInspectDate, ref, 1))) newInspect++;
     }
     return { inspecting, abnormal, newInspect };
   }
@@ -500,8 +527,8 @@ const Daily = (function () {
       !r.goodsStatus.includes('开查中') &&
       (r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
     const newInspect = todayRecs.filter(r =>
-      (r.domInspectDate && sameDay(r.domInspectDate, TODAY)) ||
-      (r.destInspectDate && sameDay(r.destInspectDate, TODAY)));
+      (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
+      (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1)));
 
     let deltaHtml = '';
     if (yesterdayRecs) {
@@ -510,8 +537,8 @@ const Daily = (function () {
         const d = cur - prev;
         return `<div class="ab-delta-item">${label}<b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</b><span>较昨日</span></div>`;
       };
-      // 去掉"查验进行中 较昨日"——与"当日新增查验"信息重复（查验进行中+2 ≈ 当日新增+2）
-      deltaHtml = `<div class="ab-delta">${mk(t.abnormal - t.inspecting, y.abnormal - y.inspecting, '异常单(索赔/赔付)')}${mk(t.newInspect, y.newInspect, '当日新增查验')}</div>`;
+      // 去掉"查验进行中 较昨日"——与"近两日新增查验"信息重复
+      deltaHtml = `<div class="ab-delta">${mk(t.abnormal - t.inspecting, y.abnormal - y.inspecting, '异常单(索赔/赔付)')}${mk(t.newInspect, y.newInspect, '近两日新增查验')}</div>`;
     } else {
       deltaHtml = '<div class="ov-note" style="color:#e08e0b">未载入昨日表，暂不显示"较昨日变动"。</div>';
     }
@@ -521,7 +548,7 @@ const Daily = (function () {
       `<div class="kpi-card ov-abn"><div class="kpi-num">${inspecting.length}</div><div class="kpi-label">查验进行中</div></div>` +
       `<div class="kpi-card" style="--card-color:#7c3aed"><div class="kpi-num" style="color:#7c3aed">${kaicha.length}</div><div class="kpi-label">开查中</div></div>` +
       `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">索赔/赔付</div></div>` +
-      `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">当日新增查验(${fmtMD(TODAY)})</div></div>` +
+      `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">近两日新增查验(${fmtMD(new Date(Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate() - 1)))}-${fmtMD(TODAY)})</div></div>` +
       '</div>' + deltaHtml;
 
     // 明细表（异常单）— 支持客户筛选 + 查验持续天数
