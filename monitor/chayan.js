@@ -1289,6 +1289,73 @@ function updateDrilldownTab() {
       </tr>`;
     }).join('');
   }
+
+  // ===== 月度各家代理起运港/目的港查验率表 =====
+  renderDrilldownMonthly(channel);
+}
+
+// 渠道下钻：月度各家代理起运港/目的港查验率（表格，无图）
+function renderDrilldownMonthly(channel) {
+  const mHead = document.getElementById('drilldownMonthlyHead');
+  const mBody = document.getElementById('drilldownMonthlyBody');
+  if (!mHead || !mBody) return;
+
+  const mSubset = records.filter(r => r.channel === channel && r.shipDate);
+  if (mSubset.length === 0) {
+    mHead.innerHTML = '';
+    mBody.innerHTML = '<tr><td style="padding:20px;color:#999;text-align:center">该渠道暂无数据</td></tr>';
+    return;
+  }
+
+  // agent -> {monthKey: {total, dom, for}}
+  const mMap = {};
+  for (const r of mSubset) {
+    const m = formatDateYM(r.shipDate);
+    const a = r.agent || '(未登记)';
+    if (!mMap[a]) mMap[a] = {};
+    if (!mMap[a][m]) mMap[a][m] = { total: 0, dom: 0, for: 0 };
+    mMap[a][m].total += r.ticketCount;
+    if (r.isDomestic) mMap[a][m].dom += r.ticketCount;
+    if (r.isForeign) mMap[a][m].for += r.ticketCount;
+  }
+
+  const months = [...new Set(mSubset.map(r => formatDateYM(r.shipDate)))].sort();
+  // 代理按该渠道总票数降序，过滤票数<10 的噪点
+  const agents = Object.entries(mMap)
+    .map(([a, obj]) => ({ a, total: Object.values(obj).reduce((s, x) => s + x.total, 0) }))
+    .filter(x => x.total >= 10)
+    .sort((x, y) => y.total - x.total)
+    .map(x => x.a);
+
+  const monthLabel = m => `${parseInt(m.split('-')[1], 10)}月`;
+  const headTop = ['<th rowspan="2" class="monthly-sticky-col">代理（按票数降序）</th>']
+    .concat(months.map(m => `<th colspan="2">${monthLabel(m)}</th>`))
+    .join('');
+  const headBottom = months.map(() => '<th style="background:#f0f4f8">起运港</th><th style="background:#f0f4f8">目的港</th>').join('');
+  mHead.innerHTML = `<tr>${headTop}</tr><tr>${headBottom}</tr>`;
+
+  if (agents.length === 0) {
+    mBody.innerHTML = `<tr><td colspan="${1 + months.length * 2}" style="text-align:center;color:#999;padding:20px">该渠道暂无足够数据（各代理票数均&lt;10）</td></tr>`;
+    return;
+  }
+
+  const rateCls = (v, foreign) => {
+    if (v >= 15) return foreign ? 'rate-f-high' : 'rate-high';
+    if (v >= 10) return foreign ? 'rate-f-mid' : 'rate-mid';
+    return '';
+  };
+
+  mBody.innerHTML = agents.map(agent => {
+    const cells = months.map(m => {
+      const d = mMap[agent][m];
+      if (!d || d.total === 0) return '<td>—</td><td>—</td>';
+      const domRate = d.dom / d.total * 100;
+      const forRate = d.for / d.total * 100;
+      return `<td class="${rateCls(domRate, false)}">${domRate.toFixed(1)}%</td>` +
+             `<td class="${rateCls(forRate, true)}">${forRate.toFixed(1)}%</td>`;
+    }).join('');
+    return `<tr><th class="monthly-sticky-col">${agent}</th>${cells}</tr>`;
+  }).join('');
 }
 
 // 预警与明细
