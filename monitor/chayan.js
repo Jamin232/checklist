@@ -551,8 +551,43 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
     grid: { left: '16%', right: '12%', top: '10%', bottom: '16%' },
     xAxis: { type: 'category', data: xLabels, splitArea: { show: true }, axisLabel: { rotate: 45, fontSize: 10, interval: 0 } },
     yAxis: { type: 'category', data: yLabels, splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
-    visualMap: { min: 0, max: 10, calculable: false, orient: 'vertical', right: '2%', top: 'center', itemHeight: 120, inRange: { color: ['#e8f7ef', '#fff3cd', '#d62929'] } },
-    series: [{ name: '查验率', type: 'heatmap', data, label: { show: true, fontSize: 10, formatter: p => p.data[2] > 0 ? p.data[2].toFixed(1) : '' } }]
+    // 分档配色：避免 0-10 连续渐变把所有低值压成一坨浅色
+    visualMap: {
+      type: 'piecewise',
+      pieces: [
+        { min: 0,  max: 10, color: '#e8f7ef', label: '<10%' },
+        { min: 10, max: 15, color: '#ffd9a8', label: '10-15%' },
+        { min: 15, max: 20, color: '#ffa66b', label: '15-20%' },
+        { min: 20,           color: '#d62929', label: '≥20%' }
+      ],
+      orient: 'vertical',
+      right: '2%',
+      top: 'center',
+      itemHeight: 18,
+      itemGap: 6,
+      textStyle: { fontSize: 10 },
+      itemSymbol: 'roundRect'
+    },
+    // 深色底翻白字（≥15% 用 dark，否则 light）
+    series: [{
+      name: '查验率',
+      type: 'heatmap',
+      data,
+      label: {
+        show: true,
+        fontSize: 10,
+        formatter: p => {
+          const v = p.data[2];
+          if (v <= 0) return '';
+          const style = v >= 15 ? 'dark' : 'light';
+          return `{${style}|${v.toFixed(1)}}`;
+        },
+        rich: {
+          light: { color: '#333', fontWeight: 600 },
+          dark:  { color: '#fff', fontWeight: 600 }
+        }
+      }
+    }]
   };
 }
 
