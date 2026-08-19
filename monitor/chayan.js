@@ -548,25 +548,25 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
   return {
     title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
     tooltip: { position: 'top', formatter: p => `${p.name}: ${p.data[2].toFixed(2)}%` },
-    grid: { left: '16%', right: '12%', top: '10%', bottom: '16%' },
+    grid: { left: '16%', right: '16%', top: '10%', bottom: '16%' },
     xAxis: { type: 'category', data: xLabels, splitArea: { show: true }, axisLabel: { rotate: 45, fontSize: 10, interval: 0 } },
     yAxis: { type: 'category', data: yLabels, splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
-    // 分档配色：避免 0-10 连续渐变把所有低值压成一坨浅色
+    // 分档配色（4 档）：每档独立颜色，避免 15-20% 与 ≥20% 视觉撞色
     visualMap: {
       type: 'piecewise',
       pieces: [
         { min: 0,  max: 10, color: '#e8f7ef', label: '<10%' },
         { min: 10, max: 15, color: '#ffd9a8', label: '10-15%' },
-        { min: 15, max: 20, color: '#ffa66b', label: '15-20%' },
+        { min: 15, max: 20, color: '#ff7e3d', label: '15-20%' },
         { min: 20,           color: '#d62929', label: '≥20%' }
       ],
       orient: 'vertical',
       right: '2%',
       top: 'center',
-      itemHeight: 18,
-      itemGap: 6,
-      textStyle: { fontSize: 10 },
-      itemSymbol: 'roundRect'
+      itemHeight: 12,
+      itemGap: 4,
+      itemWidth: 14,
+      textStyle: { fontSize: 9 }
     },
     // 深色底翻白字（≥15% 用 dark，否则 light）
     series: [{
