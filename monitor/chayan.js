@@ -1356,11 +1356,10 @@ function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
     return;
   }
 
-  // 该指标的颜色 class：dom=红系, for=蓝系, all=紫系
+  // 颜色：一律以 10% 为红线，>10% 用红色字体突出（三表统一，不再分橙/蓝/紫）
   const clsFor = (v) => {
-    if (metric === 'dom') return v >= 15 ? 'rate-high' : (v >= 10 ? 'rate-mid' : '');
-    if (metric === 'for') return v >= 15 ? 'rate-f-high' : (v >= 10 ? 'rate-f-mid' : '');
-    return v >= 15 ? 'rate-all-high' : (v >= 10 ? 'rate-all-mid' : ''); // all=紫系
+    if (v > 10) return 'rate-high'; // 红字 #d62929 加粗
+    return '';
   };
 
   const rateOf = (d) => {
