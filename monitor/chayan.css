@@ -116,7 +116,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
   border-right:1px solid #ddd;
 }
 .monthly-grid thead .monthly-sticky-col{background:#eaeaea;z-index:3}
+/* 月度表 >10% 红色高亮。必须高于 .data-table td 的优先级(0,1,1) 才能覆盖黑字 */
 .rate-high{color:#d62929;font-weight:700}
+.monthly-grid td.rate-high{color:#d62929;font-weight:700}
 .rate-mid{color:#e6a23c;font-weight:600}
 .rate-f-high{color:#1764e8;font-weight:700}
 .rate-f-mid{color:#5b9bd5;font-weight:600}
