@@ -98,10 +98,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .compare-table .sug-warn{color:var(--warning);font-weight:600}
 .compare-table .sug-good{color:var(--primary);font-weight:600}
 
-/* 月度各家代理起运港/目的港查验率表 */
+/* 月度各家代理查验率表（起运港/目的港/综合 三表） */
 .monthly-tip{font-size:11px;color:#888;padding:6px 16px;background:#f8f9fb;line-height:1.5}
-#drilldownMonthly{white-space:nowrap}
-#drilldownMonthly .monthly-sticky-col{
+.monthly-sub{margin:10px 16px 16px}
+.monthly-sub-title{font-size:12.5px;font-weight:700;color:#333;padding:8px 2px 6px}
+.monthly-grid{white-space:nowrap;width:100%}
+.monthly-grid .monthly-sticky-col{
   position:sticky;
   left:0;
   background:#f8f9fb;
@@ -113,11 +115,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
   color:#333;
   border-right:1px solid #ddd;
 }
-#drilldownMonthly thead .monthly-sticky-col{background:#eaeaea;z-index:3}
+.monthly-grid thead .monthly-sticky-col{background:#eaeaea;z-index:3}
 .rate-high{color:#d62929;font-weight:700}
 .rate-mid{color:#e6a23c;font-weight:600}
 .rate-f-high{color:#1764e8;font-weight:700}
 .rate-f-mid{color:#5b9bd5;font-weight:600}
+.rate-all-high{color:#8e44ad;font-weight:700}
+.rate-all-mid{color:#bb8fce;font-weight:600}
 
 /* 阈值设置 */
 .threshold-row{display:flex;gap:16px;padding:12px 14px;background:#fff}

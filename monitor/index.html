@@ -245,14 +245,38 @@
         </div>
 
         <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title">📅 月度各家代理起运港/目的港查验率</div>
+          <div class="section-title">📅 月度各家代理查验率（按指标分表）</div>
         </div>
-        <div class="monthly-tip">行=代理（按该渠道总票数降序，过滤票数&lt;10 的噪点），列=月份；每格上=起运港查验率、下=目的港查验率。可左右滚动查看历史月份。</div>
-        <div class="table-wrap" style="max-height:520px">
-          <table class="data-table" id="drilldownMonthly">
-            <thead id="drilldownMonthlyHead"></thead>
-            <tbody id="drilldownMonthlyBody"></tbody>
-          </table>
+        <div class="monthly-tip">行=代理（按该渠道总票数降序，过滤票数&lt;10 的噪点），列=月份。可左右滚动查看历史月份。三张表分别看起运港 / 目的港 / 综合，互不挤占。</div>
+
+        <div class="monthly-sub">
+          <div class="monthly-sub-title">🚢 起运港查验率（月度）</div>
+          <div class="table-wrap" style="max-height:480px">
+            <table class="data-table monthly-grid">
+              <thead id="mDomHead"></thead>
+              <tbody id="mDomBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="monthly-sub">
+          <div class="monthly-sub-title">🛬 目的港查验率（月度）</div>
+          <div class="table-wrap" style="max-height:480px">
+            <table class="data-table monthly-grid">
+              <thead id="mForHead"></thead>
+              <tbody id="mForBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="monthly-sub">
+          <div class="monthly-sub-title">📊 综合查验率（月度，起运港+目的港）</div>
+          <div class="table-wrap" style="max-height:480px">
+            <table class="data-table monthly-grid">
+              <thead id="mAllHead"></thead>
+              <tbody id="mAllBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

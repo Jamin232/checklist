@@ -1290,24 +1290,26 @@ function updateDrilldownTab() {
     }).join('');
   }
 
-  // ===== 月度各家代理起运港/目的港查验率表 =====
+  // ===== 月度各家代理查验率表（起运港/目的港/综合 分三表）=====
   renderDrilldownMonthly(channel);
 }
 
-// 渠道下钻：月度各家代理起运港/目的港查验率（表格，无图）
+// 渠道下钻：月度各家代理查验率（表格，无图）。拆成 起运港/目的港/综合 三张独立表
 function renderDrilldownMonthly(channel) {
-  const mHead = document.getElementById('drilldownMonthlyHead');
-  const mBody = document.getElementById('drilldownMonthlyBody');
-  if (!mHead || !mBody) return;
-
+  // 公共聚合：agent -> {monthKey: {total, dom, for}}
   const mSubset = records.filter(r => r.channel === channel && r.shipDate);
   if (mSubset.length === 0) {
-    mHead.innerHTML = '';
-    mBody.innerHTML = '<tr><td style="padding:20px;color:#999;text-align:center">该渠道暂无数据</td></tr>';
+    ['mDomHead', 'mForHead', 'mAllHead'].forEach(id => {
+      const h = document.getElementById(id);
+      if (h) h.innerHTML = '';
+    });
+    ['mDomBody', 'mForBody', 'mAllBody'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.innerHTML = '<tr><td style="padding:20px;color:#999;text-align:center">该渠道暂无数据</td></tr>';
+    });
     return;
   }
 
-  // agent -> {monthKey: {total, dom, for}}
   const mMap = {};
   for (const r of mSubset) {
     const m = formatDateYM(r.shipDate);
@@ -1327,32 +1329,47 @@ function renderDrilldownMonthly(channel) {
     .sort((x, y) => y.total - x.total)
     .map(x => x.a);
 
+  // 三张表：metric=dom/for/all，对应不同颜色主题
+  renderMonthlyTable('mDomHead', 'mDomBody', 'dom', mMap, months, agents);
+  renderMonthlyTable('mForHead', 'mForBody', 'for', mMap, months, agents);
+  renderMonthlyTable('mAllHead', 'mAllBody', 'all', mMap, months, agents);
+}
+
+// 渲染单张月度表（起运港 / 目的港 / 综合）
+function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
+  const mHead = document.getElementById(headId);
+  const mBody = document.getElementById(bodyId);
+  if (!mHead || !mBody) return;
+
   const monthLabel = m => `${parseInt(m.split('-')[1], 10)}月`;
-  const headTop = ['<th rowspan="2" class="monthly-sticky-col">代理（按票数降序）</th>']
-    .concat(months.map(m => `<th colspan="2">${monthLabel(m)}</th>`))
-    .join('');
-  const headBottom = months.map(() => '<th style="background:#f0f4f8">起运港</th><th style="background:#f0f4f8">目的港</th>').join('');
-  mHead.innerHTML = `<tr>${headTop}</tr><tr>${headBottom}</tr>`;
+  // 表头：首列 sticky 代理名 + 各月一列
+  mHead.innerHTML = `<tr><th class="monthly-sticky-col">代理（按票数降序）</th>${months.map(m => `<th>${monthLabel(m)}</th>`).join('')}</tr>`;
 
   if (agents.length === 0) {
-    mBody.innerHTML = `<tr><td colspan="${1 + months.length * 2}" style="text-align:center;color:#999;padding:20px">该渠道暂无足够数据（各代理票数均&lt;10）</td></tr>`;
+    mHead.innerHTML = `<tr><th class="monthly-sticky-col">代理（按票数降序）</th></tr>`;
+    mBody.innerHTML = `<tr><td colspan="${months.length + 1}" style="text-align:center;color:#999;padding:20px">该渠道暂无足够数据（各代理票数均&lt;10）</td></tr>`;
     return;
   }
 
-  const rateCls = (v, foreign) => {
-    if (v >= 15) return foreign ? 'rate-f-high' : 'rate-high';
-    if (v >= 10) return foreign ? 'rate-f-mid' : 'rate-mid';
-    return '';
+  // 该指标的颜色 class：dom=红系, for=蓝系, all=紫系
+  const clsFor = (v) => {
+    if (metric === 'dom') return v >= 15 ? 'rate-high' : (v >= 10 ? 'rate-mid' : '');
+    if (metric === 'for') return v >= 15 ? 'rate-f-high' : (v >= 10 ? 'rate-f-mid' : '');
+    return v >= 15 ? 'rate-all-high' : (v >= 10 ? 'rate-all-mid' : ''); // all=紫系
+  };
+
+  const rateOf = (d) => {
+    if (!d || d.total === 0) return null;
+    if (metric === 'dom') return d.dom / d.total * 100;
+    if (metric === 'for') return d.for / d.total * 100;
+    return (d.dom + d.for) / d.total * 100; // all
   };
 
   mBody.innerHTML = agents.map(agent => {
     const cells = months.map(m => {
-      const d = mMap[agent][m];
-      if (!d || d.total === 0) return '<td>—</td><td>—</td>';
-      const domRate = d.dom / d.total * 100;
-      const forRate = d.for / d.total * 100;
-      return `<td class="${rateCls(domRate, false)}">${domRate.toFixed(1)}%</td>` +
-             `<td class="${rateCls(forRate, true)}">${forRate.toFixed(1)}%</td>`;
+      const v = rateOf(mMap[agent][m]);
+      if (v === null) return '<td>—</td>';
+      return `<td class="${clsFor(v)}">${v.toFixed(1)}%</td>`;
     }).join('');
     return `<tr><th class="monthly-sticky-col">${agent}</th>${cells}</tr>`;
   }).join('');
