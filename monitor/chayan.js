@@ -134,6 +134,15 @@ function safeStr(val) {
   return String(val).trim();
 }
 
+function escapeHtml(s) {
+  return safeStr(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function safeNum(val) {
   const n = parseFloat(val);
   return isNaN(n) ? 0 : n;
@@ -1059,36 +1068,97 @@ function buildAgentComparisonTable() {
 }
 
 // 代理明细表
+// 代理×渠道 综合查验率：以可横向滚动的 HTML 表格呈现
+// 代理列（左）固定（sticky），渠道（顶）可横向滚动；放宽到 Top20 代理 + Top20 渠道，
+// 颜色按查验率深浅上色，让所有维度都能完整阅读。
 function buildAgentChannelHeatmap() {
-  // 取 Top 15 代理和 Top 15 渠道（热力图空间已加大）
+  const wrap = document.getElementById('agentChannelHeatmap');
+  if (!wrap) return;
+
+  // 放宽到 Top 20，避免截断
   const topAgents = Object.entries(aggByAgent)
     .filter(([k, v]) => k && v.totalTickets >= 20)
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 15)
+    .slice(0, 20)
     .map(([k]) => k);
   const topChannels = Object.entries(aggByChannel)
     .filter(([k, v]) => k && v.totalTickets >= 20)
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 15)
+    .slice(0, 20)
     .map(([k]) => k);
 
-  const heatData = [];
+  // 颜色阶：0 浅绿 → 5 浅黄 → 15+ 深红
+  function cellColor(rate) {
+    if (!rate || rate <= 0) return '#f5f7fa';
+    if (rate < 5) return '#e8f7ef';
+    if (rate < 10) return '#fff8dc';
+    if (rate < 15) return '#ffd9a8';
+    if (rate < 20) return '#ffa66b';
+    if (rate < 30) return '#ff6b3d';
+    return '#d62929';
+  }
+
+  // 预计算矩阵
+  const matrix = {};
   for (let i = 0; i < topAgents.length; i++) {
+    matrix[topAgents[i]] = {};
     for (let j = 0; j < topChannels.length; j++) {
       const subset = records.filter(r => r.agent === topAgents[i] && r.channel === topChannels[j]);
       const total = subset.reduce((s, r) => s + r.ticketCount, 0);
       const inspected = subset.reduce((s, r) => s + (r.isInspected ? r.ticketCount : 0), 0);
       const rate = total > 0 ? (inspected / total * 100) : 0;
-      heatData.push([j, i, rate, total]);
+      matrix[topAgents[i]][topChannels[j]] = { total, rate };
     }
   }
 
-  const chartDom = document.getElementById('agentChannelHeatmap');
-  if (chartDom) {
-    const chart = setChart('agentChannelHeatmap', chartDom);
-    const option = createHeatmapOption('代理×渠道综合查验率', topChannels, topAgents, heatData);
-    chart.setOption(option, { notMerge: true, lazyUpdate: true });
-  }
+  // 渲染表格
+  const headCells = topChannels.map(c => `<th class="ach-th">${escapeHtml(c)}</th>`).join('');
+  const bodyRows = topAgents.map((agent, i) => {
+    const agentInfo = aggByAgent[agent];
+    const agentRate = agentInfo ? agentInfo.overallRate : 0;
+    const agentTickets = agentInfo ? agentInfo.totalTickets : 0;
+    const cells = topChannels.map(ch => {
+      const cell = matrix[agent][ch];
+      const rate = cell ? cell.rate : 0;
+      const total = cell ? cell.total : 0;
+      const bg = cellColor(rate);
+      const fg = rate >= 15 ? '#fff' : '#333';
+      const tip = total > 0
+        ? `title="${escapeHtml(agent)} × ${escapeHtml(ch)}：${rate.toFixed(2)}% （${total}票）"`
+        : `title="${escapeHtml(agent)} × ${escapeHtml(ch)}：无数据"`;
+      const txt = total > 0 ? rate.toFixed(1) + '%' : '—';
+      const sub = total > 0 && rate >= 5 ? `<div class="ach-cell-sub">${total}</div>` : '';
+      return `<td class="ach-td" style="background:${bg};color:${fg}" ${tip}>${txt}${sub}</td>`;
+    }).join('');
+    return `
+      <tr>
+        <th class="ach-th-left" title="代理：${escapeHtml(agent)} ｜ 综合查率 ${agentRate.toFixed(1)}% ｜ 上周 ${agentTickets}票">
+          <div class="ach-agent-name">${escapeHtml(agent)}</div>
+          <div class="ach-agent-meta">${agentRate.toFixed(1)}% · ${agentTickets}票</div>
+        </th>
+        ${cells}
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="ach-table-wrap">
+      <table class="ach-table">
+        <thead><tr><th class="ach-th-left ach-th-corner">代理 \\ 渠道</th>${headCells}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>
+    <div class="ach-legend">
+      <span>查验率色阶：</span>
+      <span class="ach-legend-item" style="background:#f5f7fa;border:1px solid #ddd">无数据</span>
+      <span class="ach-legend-item" style="background:#e8f7ef">0-5%</span>
+      <span class="ach-legend-item" style="background:#fff8dc">5-10%</span>
+      <span class="ach-legend-item" style="background:#ffd9a8">10-15%</span>
+      <span class="ach-legend-item" style="background:#ffa66b;color:#fff">15-20%</span>
+      <span class="ach-legend-item" style="background:#ff6b3d;color:#fff">20-30%</span>
+      <span class="ach-legend-item" style="background:#d62929;color:#fff">≥30%</span>
+      <span class="ach-legend-tip">↔ 左右滚动查看更多渠道 ｜ ↑↓ 纵向查看更多代理</span>
+    </div>
+  `;
 }
 
 // 渠道下钻：选择渠道大类后，看该渠道上周各代理的表现
