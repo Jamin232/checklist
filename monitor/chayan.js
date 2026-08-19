@@ -548,9 +548,9 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
   return {
     title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
     tooltip: { position: 'top', formatter: p => `${p.name}: ${p.data[2].toFixed(2)}%` },
-    grid: { left: '22%', right: '15%', top: '12%', bottom: '18%' },
-    xAxis: { type: 'category', data: xLabels, splitArea: { show: true }, axisLabel: { rotate: 45, fontSize: 10 } },
-    yAxis: { type: 'category', data: yLabels, splitArea: { show: true }, axisLabel: { fontSize: 10 } },
+    grid: { left: '16%', right: '12%', top: '10%', bottom: '16%' },
+    xAxis: { type: 'category', data: xLabels, splitArea: { show: true }, axisLabel: { rotate: 45, fontSize: 10, interval: 0 } },
+    yAxis: { type: 'category', data: yLabels, splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
     visualMap: { min: 0, max: 10, calculable: false, orient: 'vertical', right: '2%', top: 'center', itemHeight: 120, inRange: { color: ['#e8f7ef', '#fff3cd', '#d62929'] } },
     series: [{ name: '查验率', type: 'heatmap', data, label: { show: true, fontSize: 10, formatter: p => p.data[2] > 0 ? p.data[2].toFixed(1) : '' } }]
   };
@@ -1058,13 +1058,13 @@ function buildAgentComparisonTable() {
   }).join('');
 }
 
-// 代理明细表
+// 代理 × 渠道 综合查验率热力图
 function buildAgentChannelHeatmap() {
-  // 取 Top 15 代理和 Top 15 渠道（热力图空间已加大）
+  // 纵轴（代理）家数调大：Top 30 代理；横轴（渠道）维持 Top 15
   const topAgents = Object.entries(aggByAgent)
     .filter(([k, v]) => k && v.totalTickets >= 20)
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
-    .slice(0, 15)
+    .slice(0, 30)
     .map(([k]) => k);
   const topChannels = Object.entries(aggByChannel)
     .filter(([k, v]) => k && v.totalTickets >= 20)
@@ -1085,6 +1085,8 @@ function buildAgentChannelHeatmap() {
 
   const chartDom = document.getElementById('agentChannelHeatmap');
   if (chartDom) {
+    // 高度随代理家数自适应，保证纵轴标签不被压缩
+    chartDom.style.height = Math.max(480, topAgents.length * 20 + 140) + 'px';
     const chart = setChart('agentChannelHeatmap', chartDom);
     const option = createHeatmapOption('代理×渠道综合查验率', topChannels, topAgents, heatData);
     chart.setOption(option, { notMerge: true, lazyUpdate: true });
