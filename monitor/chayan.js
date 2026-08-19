@@ -1339,7 +1339,12 @@ function renderDrilldownMonthly(channel) {
 function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
   const mHead = document.getElementById(headId);
   const mBody = document.getElementById(bodyId);
-  if (!mHead || !mBody) return;
+  if (!mHead || !mBody) {
+    // 容器缺失一般是浏览器缓存了旧 JS（找不到新 id）。给 mBody 一行提示，便于排查。
+    if (mBody) mBody.innerHTML = `<tr><td style="padding:14px;color:#c00">月度表容器未找到 (${headId}/${bodyId})，请 Ctrl+Shift+R 强刷</td></tr>`;
+    console.warn('[renderMonthlyTable] missing', headId, bodyId);
+    return;
+  }
 
   const monthLabel = m => `${parseInt(m.split('-')[1], 10)}月`;
   // 表头：首列 sticky 代理名 + 各月一列
