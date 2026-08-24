@@ -129,6 +129,25 @@ function weekShort(wk) {
   return m ? m[1] : wk;
 }
 
+// 「最近一个已结束完整周」(语义"上周")。
+// - 周一导入 / 本周刚开始：本周 weekKey 不在 allWeekKeys 中，取最后一个（=上周）
+// - 周中及以后导入：本周 weekKey 已在 allWeekKeys 中，取倒数第 2 个（=上周）
+// 这两个函数被多处复用，避免各处重复判断
+function lastCompleteWeekKey() {
+  if (allWeekKeys.length === 0) return '';
+  const thisWk = getWeekKey(new Date());
+  if (allWeekKeys.includes(thisWk) && allWeekKeys.length >= 2) {
+    return allWeekKeys[allWeekKeys.length - 2];
+  }
+  return allWeekKeys[allWeekKeys.length - 1];
+}
+function prevCompleteWeekKey() {
+  if (allWeekKeys.length < 2) return '';
+  const thisWk = getWeekKey(new Date());
+  const offset = (allWeekKeys.includes(thisWk) && allWeekKeys.length >= 3) ? 3 : 2;
+  return allWeekKeys[allWeekKeys.length - offset] || '';
+}
+
 function safeStr(val) {
   if (val === undefined || val === null) return '';
   return String(val).trim();
@@ -732,9 +751,9 @@ function updateDashboardTab() {
   document.getElementById('kpiForeign').textContent = (total > 0 ? (foreign / total * 100).toFixed(2) : '0.00') + '%';
   document.getElementById('kpiOverall').textContent = (total > 0 ? ((dom + foreign) / total * 100).toFixed(2) : '0.00') + '%';
 
-  // KPI: 上周（倒数第2周，本周刚开始数据不全）
+  // KPI: 上周（最近一个已结束完整周，helper 自动处理"本周刚开始"的边界）
   if (allWeekKeys.length >= 2) {
-    const prevWk = allWeekKeys[allWeekKeys.length - 2];
+    const prevWk = lastCompleteWeekKey();
     const timeData = aggByTime['week'];
     if (timeData[prevWk]) {
       document.getElementById('kpiWeekRate').textContent = timeData[prevWk].overallRate.toFixed(1) + '%';
@@ -924,9 +943,9 @@ function buildChannelComparisonTable() {
     return;
   }
 
-  // 上上周 vs 上周（本周刚开始数据不全，不看本周）
-  const prevWk = allWeekKeys[allWeekKeys.length - 2];
-  const prev2Wk = allWeekKeys[allWeekKeys.length - 3];
+  // 上上周 vs 上周（本周刚开始数据不全，不看本周）—— 助手函数自动适配"本周是否已出现"
+  const prevWk = lastCompleteWeekKey();
+  const prev2Wk = prevCompleteWeekKey();
 
   const rows = [];
   for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
@@ -996,9 +1015,9 @@ function buildAgentComparisonTable() {
   // 全局总票数（所有历史）
   const globalTotal = records.reduce((s, r) => s + r.ticketCount, 0);
 
-  // 全局上周、上上周总票数
-  const lastWk = allWeekKeys[allWeekKeys.length - 2];  // 上周
-  const prevWk = allWeekKeys[allWeekKeys.length - 3]; // 上上周
+  // 全局上周、上上周总票数（助手函数自动适配本周是否已出现）
+  const lastWk = lastCompleteWeekKey();
+  const prevWk = prevCompleteWeekKey();
   let globalLastWkTotal = 0, globalPrevWkTotal = 0;
   if (lastWk) {
     for (const wm of Object.values(aggByAgentWeekly)) {
@@ -1147,9 +1166,9 @@ function updateDrilldownTab() {
   // 筛选该渠道下的记录
   const subset = records.filter(r => r.channel === channel);
 
-  // 上周和上上周
-  const lastWk = allWeekKeys[allWeekKeys.length - 2];  // 上周
-  const prevWk = allWeekKeys[allWeekKeys.length - 3]; // 上上周
+  // 上周和上上周（助手函数自动适配本周是否已出现）
+  const lastWk = lastCompleteWeekKey();
+  const prevWk = prevCompleteWeekKey();
 
   // 按代理+周聚合（起运港 + 重量）
   const weeklyAgentMap = {};      // {weekKey: {agent: {total, domestic}}}
@@ -1491,7 +1510,7 @@ function exportToExcel() {
     { 指标: '综合查验率(%)', 数值: total > 0 ? num2((domT + forT) / total * 100) : 0 }
   ];
   if (allWeekKeys.length >= 2) {
-    const lw = allWeekKeys[allWeekKeys.length - 2];
+    const lw = lastCompleteWeekKey();
     const d = aggByTime['week'][lw];
     if (d) {
       kpi.push({ 指标: '上周综合查验率(%)', 数值: num2(d.overallRate) });
@@ -1531,8 +1550,8 @@ function exportToExcel() {
 
   // 5. 渠道周对比（上上周→上周 起运港率）
   if (allWeekKeys.length >= 3) {
-    const prevWk = allWeekKeys[allWeekKeys.length - 2];
-    const prev2Wk = allWeekKeys[allWeekKeys.length - 3];
+    const prevWk = lastCompleteWeekKey();
+    const prev2Wk = prevCompleteWeekKey();
     const rows = [];
     for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
       const cur = wm[prevWk], prev = wm[prev2Wk];
@@ -1553,8 +1572,8 @@ function exportToExcel() {
   // 6. 代理绩效对比
   {
     const globalTotal = records.reduce((s, r) => s + r.ticketCount, 0);
-    const lastWk = allWeekKeys[allWeekKeys.length - 2];
-    const prevWk = allWeekKeys[allWeekKeys.length - 3];
+    const lastWk = lastCompleteWeekKey();
+    const prevWk = prevCompleteWeekKey();
     let gLast = 0, gPrev = 0;
     if (lastWk) for (const wm of Object.values(aggByAgentWeekly)) if (wm[lastWk]) gLast += wm[lastWk].totalTickets;
     if (prevWk) for (const wm of Object.values(aggByAgentWeekly)) if (wm[prevWk]) gPrev += wm[prevWk].totalTickets;
@@ -1617,8 +1636,8 @@ function exportToExcel() {
 
   // 8. 下钻明细（所有渠道合并，上周视角）
   {
-    const lastWk = allWeekKeys[allWeekKeys.length - 2];
-    const prevWk = allWeekKeys[allWeekKeys.length - 3];
+    const lastWk = lastCompleteWeekKey();
+    const prevWk = prevCompleteWeekKey();
     const rows = [];
     for (const channel of Object.keys(aggByChannel).filter(k => k)) {
       const subset = records.filter(r => r.channel === channel);
