@@ -1330,6 +1330,7 @@ function renderDrilldownMonthly(channel) {
   }
 
   const mMap = {};
+  const monthSummary = {}; // 月度整渠道汇总（不区分代理）：{ '2026-04': { total, dom, for } }
   for (const r of mSubset) {
     const m = formatDateYM(r.shipDate);
     const a = r.agent || '(未登记)';
@@ -1338,6 +1339,11 @@ function renderDrilldownMonthly(channel) {
     mMap[a][m].total += r.ticketCount;
     if (r.isDomestic) mMap[a][m].dom += r.ticketCount;
     if (r.isForeign) mMap[a][m].for += r.ticketCount;
+    // 同步累计整渠道月度（不受代理 ≥10 过滤影响）
+    if (!monthSummary[m]) monthSummary[m] = { total: 0, dom: 0, for: 0 };
+    monthSummary[m].total += r.ticketCount;
+    if (r.isDomestic) monthSummary[m].dom += r.ticketCount;
+    if (r.isForeign) monthSummary[m].for += r.ticketCount;
   }
 
   const months = [...new Set(mSubset.map(r => formatDateYM(r.shipDate)))].sort();
@@ -1348,14 +1354,15 @@ function renderDrilldownMonthly(channel) {
     .sort((x, y) => y.total - x.total)
     .map(x => x.a);
 
-  // 三张表：metric=dom/for/all，对应不同颜色主题
-  renderMonthlyTable('mDomHead', 'mDomBody', 'dom', mMap, months, agents);
-  renderMonthlyTable('mForHead', 'mForBody', 'for', mMap, months, agents);
-  renderMonthlyTable('mAllHead', 'mAllBody', 'all', mMap, months, agents);
+  // 三张表：metric=dom/for/all，对应不同颜色主题；monthSummary 提供"整渠道汇总"行
+  renderMonthlyTable('mDomHead', 'mDomBody', 'dom', mMap, monthSummary, months, agents);
+  renderMonthlyTable('mForHead', 'mForBody', 'for', mMap, monthSummary, months, agents);
+  renderMonthlyTable('mAllHead', 'mAllBody', 'all', mMap, monthSummary, months, agents);
 }
 
 // 渲染单张月度表（起运港 / 目的港 / 综合）
-function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
+// monthSummary: 该渠道按月整聚合（不区分代理），用于在各家之上额外渲染一条"汇总（整渠道）"行
+function renderMonthlyTable(headId, bodyId, metric, mMap, monthSummary, months, agents) {
   const mHead = document.getElementById(headId);
   const mBody = document.getElementById(bodyId);
   if (!mHead || !mBody) {
@@ -1369,7 +1376,7 @@ function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
   // 表头：首列 sticky 代理名 + 各月一列
   mHead.innerHTML = `<tr><th class="monthly-sticky-col">代理（按票数降序）</th>${months.map(m => `<th>${monthLabel(m)}</th>`).join('')}</tr>`;
 
-  if (agents.length === 0) {
+  if (agents.length === 0 && (!monthSummary || Object.keys(monthSummary).length === 0)) {
     mHead.innerHTML = `<tr><th class="monthly-sticky-col">代理（按票数降序）</th></tr>`;
     mBody.innerHTML = `<tr><td colspan="${months.length + 1}" style="text-align:center;color:#999;padding:20px">该渠道暂无足够数据（各代理票数均&lt;10）</td></tr>`;
     return;
@@ -1388,7 +1395,16 @@ function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
     return (d.dom + d.for) / d.total * 100; // all
   };
 
-  mBody.innerHTML = agents.map(agent => {
+  // 1) 汇总行：整渠道该月所有代理合计（不受代理 ≥10 票过滤）
+  const summaryCells = months.map(m => {
+    const v = rateOf(monthSummary[m]);
+    if (v === null) return '<td>—</td>';
+    return `<td class="${clsFor(v)}">${v.toFixed(1)}%</td>`;
+  }).join('');
+  const summaryRow = `<tr class="monthly-row-summary"><th class="monthly-sticky-col">📊 汇总（整渠道）</th>${summaryCells}</tr>`;
+
+  // 2) 各代理明细行
+  const agentRows = agents.map(agent => {
     const cells = months.map(m => {
       const v = rateOf(mMap[agent][m]);
       if (v === null) return '<td>—</td>';
@@ -1396,6 +1412,8 @@ function renderMonthlyTable(headId, bodyId, metric, mMap, months, agents) {
     }).join('');
     return `<tr><th class="monthly-sticky-col">${agent}</th>${cells}</tr>`;
   }).join('');
+
+  mBody.innerHTML = summaryRow + agentRows;
 }
 
 // 预警与明细

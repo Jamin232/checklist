@@ -122,6 +122,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .rate-mid{color:#e6a23c;font-weight:600}
 .rate-f-high{color:#1764e8;font-weight:700}
 .rate-f-mid{color:#5b9bd5;font-weight:600}
+
+/* 整渠道汇总行：加粗 + 浅灰底 + 上边框，与各家代理明细行清晰区分 */
+.monthly-row-summary th,
+.monthly-row-summary td{
+  background:#eef2f7 !important;
+  font-weight:700;
+  border-top:2px solid #6b7a90;
+  border-bottom:1px solid #cfd6e0;
+}
+.monthly-row-summary .monthly-sticky-col{background:#dde4ee !important;color:#1f2d3d}
 .rate-all-high{color:#8e44ad;font-weight:700}
 .rate-all-mid{color:#bb8fce;font-weight:600}
 
