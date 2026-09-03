@@ -7,7 +7,7 @@
 <!-- CDN 依赖 -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<link rel="stylesheet" href="chayan.css?v=20260903g">
+<link rel="stylesheet" href="chayan.css?v=20260903h">
 </head>
 <body>
 <div class="app">
@@ -292,6 +292,14 @@
         <div class="threshold-row">
           <label>高风险阈值：<input type="number" id="highRiskInput" class="threshold-input" step="0.1">%</label>
           <label>中风险阈值：<input type="number" id="midRiskInput" class="threshold-input" step="0.1">%</label>
+          <label>月份：<select id="alertMonthSelect" class="threshold-input"></select></label>
+          <label>口径：
+            <select id="alertPortSelect" class="threshold-input">
+              <option value="overall">综合</option>
+              <option value="domestic">起运港</option>
+              <option value="foreign">目的港</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -299,7 +307,7 @@
       <div class="section">
         <div class="section-header">
           <div class="section-title">🚨 风险预警列表</div>
-          <span class="section-note">基于全量数据 + 周环比</span>
+          <span class="section-note" id="alertNote">当前筛选：全部月份 · 综合</span>
         </div>
         <div class="table-wrap">
           <table class="data-table alert-table">
@@ -545,7 +553,7 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script src="chayan.js?v=20260903g"></script>
+<script src="chayan.js?v=20260903h"></script>
 <script src="daily.js?v=20260826f"></script>
 <script src="warehouse.js?v=20260826f"></script>
 <script>

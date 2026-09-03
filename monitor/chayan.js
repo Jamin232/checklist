@@ -51,6 +51,10 @@ let allMonthKeys = [];   // 所有月份Key（排序后）
 let lastDrilldownData = { channel: '', weeklyAgentMap: {}, sortedWeeks: [], agentOrder: [] };
 let selectedChannels = []; // 用户选中的渠道（用于趋势图）
 let channelTrendMetric = 'overall'; // 趋势图指标: 'overall' | 'domestic' | 'foreign'
+// 预警页面筛选状态
+let alertMonthFilter = 'all';     // 预警月份筛选: 'all' | 'YYYY-MM'
+let alertPortFilter = 'overall';  // 预警港口筛选: 'overall' | 'domestic' | 'foreign'
+let alertFiltersBound = false;    // 预警筛选器事件是否已绑定
 
 // ===================== 工具函数 =====================
 
@@ -414,10 +418,11 @@ function aggregateWeeklyByEntity(records, entityField) {
     const wk = getWeekKey(rec.shipDate);
     if (!wk) continue;
     if (!map[entityKey]) map[entityKey] = {};
-    if (!map[entityKey][wk]) map[entityKey][wk] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0 };
+    if (!map[entityKey][wk]) map[entityKey][wk] = { totalTickets: 0, inspectedTickets: 0, domesticTickets: 0, foreignTickets: 0 };
     map[entityKey][wk].totalTickets += rec.ticketCount;
     if (rec.isInspected) map[entityKey][wk].inspectedTickets += rec.ticketCount;
     if (rec.isDomestic) map[entityKey][wk].domesticTickets += rec.ticketCount;
+    if (rec.isForeign) map[entityKey][wk].foreignTickets += rec.ticketCount;
   }
   return map;
 }
@@ -435,60 +440,113 @@ function getEntityRateSeries(entityWeekly, entityKey, weekKeys, rateType) {
 
 // ===================== 预警规则 =====================
 
+// 预警页面筛选器：填充月份下拉 + 绑定事件（重复调用安全）
+function populateAlertFilters() {
+  const monthSel = document.getElementById('alertMonthSelect');
+  if (monthSel) {
+    const prev = monthSel.value || alertMonthFilter;
+    monthSel.innerHTML = '<option value="all">全部月份</option>' +
+      allMonthKeys.map(m => `<option value="${m}">${m}</option>`).join('');
+    monthSel.value = (prev === 'all' || allMonthKeys.includes(prev)) ? prev : 'all';
+    alertMonthFilter = monthSel.value;
+  }
+  if (alertFiltersBound) return;
+  if (monthSel) {
+    monthSel.addEventListener('change', () => { alertMonthFilter = monthSel.value; updateAlertTab(); });
+  }
+  const portSel = document.getElementById('alertPortSelect');
+  if (portSel) {
+    portSel.value = alertPortFilter;
+    portSel.addEventListener('change', () => { alertPortFilter = portSel.value; updateAlertTab(); });
+  }
+  alertFiltersBound = true;
+}
+
+// 按当前港口筛选取查验率
+function getAlertPortRate(agg) {
+  if (alertPortFilter === 'domestic') return agg.domesticRate;
+  if (alertPortFilter === 'foreign') return agg.foreignRate;
+  return agg.overallRate;
+}
+
+// 按月份筛选 records（'all' 不过滤）
+function getFilteredRecords() {
+  return records.filter(r => {
+    if (!r.shipDate) return false;
+    if (alertMonthFilter !== 'all' && formatDateYM(r.shipDate) !== alertMonthFilter) return false;
+    return true;
+  });
+}
+
 function generateAlerts() {
   const alerts = [];
+  const subset = getFilteredRecords();
+  const byAgent = aggregateBy(subset, r => r.agent);
+  const byChannel = aggregateBy(subset, r => r.channel);
+  const byLogistic = aggregateBy(subset, r => r.logisticChannel);
+  const byAgentWeekly = aggregateWeeklyByEntity(subset, 'agent');
+  const byChannelWeekly = aggregateWeeklyByEntity(subset, 'channel');
 
-  // 代理预警（全量数据）
-  for (const [agent, data] of Object.entries(aggByAgent)) {
+  // 取子集内实际存在的周Key（排序后取最后两周做环比）
+  const wkSet = new Set();
+  Object.values(byAgentWeekly).forEach(wm => Object.keys(wm).forEach(k => wkSet.add(k)));
+  const wkKeys = [...wkSet].sort();
+  const lastWk = wkKeys[wkKeys.length - 1];
+  const prevWk = wkKeys[wkKeys.length - 2];
+
+  // 代理预警
+  for (const [agent, data] of Object.entries(byAgent)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
-    if (data.overallRate > SETTINGS.highRisk) {
-      alerts.push({ type: 'high', category: '代理', name: agent, rate: data.overallRate, total: data.totalTickets });
-    } else if (data.overallRate > SETTINGS.midRisk) {
-      alerts.push({ type: 'mid', category: '代理', name: agent, rate: data.overallRate, total: data.totalTickets });
+    const rate = getAlertPortRate(data);
+    if (rate > SETTINGS.highRisk) {
+      alerts.push({ type: 'high', category: '代理', name: agent, rate, total: data.totalTickets });
+    } else if (rate > SETTINGS.midRisk) {
+      alerts.push({ type: 'mid', category: '代理', name: agent, rate, total: data.totalTickets });
     }
   }
 
   // 渠道大类预警
-  for (const [channel, data] of Object.entries(aggByChannel)) {
+  for (const [channel, data] of Object.entries(byChannel)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
-    if (data.overallRate > SETTINGS.highRisk) {
-      alerts.push({ type: 'high', category: '渠道大类', name: channel, rate: data.overallRate, total: data.totalTickets });
-    } else if (data.overallRate > SETTINGS.midRisk) {
-      alerts.push({ type: 'mid', category: '渠道大类', name: channel, rate: data.overallRate, total: data.totalTickets });
+    const rate = getAlertPortRate(data);
+    if (rate > SETTINGS.highRisk) {
+      alerts.push({ type: 'high', category: '渠道大类', name: channel, rate, total: data.totalTickets });
+    } else if (rate > SETTINGS.midRisk) {
+      alerts.push({ type: 'mid', category: '渠道大类', name: channel, rate, total: data.totalTickets });
     }
   }
 
   // 素芸渠道预警
-  for (const [channel, data] of Object.entries(aggByLogistic)) {
+  for (const [channel, data] of Object.entries(byLogistic)) {
     if (data.totalTickets < SETTINGS.minSample) continue;
-    if (data.overallRate > SETTINGS.highRisk) {
-      alerts.push({ type: 'high', category: '素芸渠道', name: channel, rate: data.overallRate, total: data.totalTickets });
-    } else if (data.overallRate > SETTINGS.midRisk) {
-      alerts.push({ type: 'mid', category: '素芸渠道', name: channel, rate: data.overallRate, total: data.totalTickets });
+    const rate = getAlertPortRate(data);
+    if (rate > SETTINGS.highRisk) {
+      alerts.push({ type: 'high', category: '素芸渠道', name: channel, rate, total: data.totalTickets });
+    } else if (rate > SETTINGS.midRisk) {
+      alerts.push({ type: 'mid', category: '素芸渠道', name: channel, rate, total: data.totalTickets });
     }
   }
 
-  // 代理周环比恶化预警（最近两周对比）
-  if (allWeekKeys.length >= 2) {
-    const lastWk = allWeekKeys[allWeekKeys.length - 1];
-    const prevWk = allWeekKeys[allWeekKeys.length - 2];
-    for (const [agent, wm] of Object.entries(aggByAgentWeekly)) {
+  // 周环比恶化预警（按所选港口口径）
+  if (lastWk && prevWk) {
+    const rateKey = alertPortFilter === 'domestic' ? 'domesticTickets' : (alertPortFilter === 'foreign' ? 'foreignTickets' : 'inspectedTickets');
+    const computeRate = d => (d && d.totalTickets > 0) ? (d[rateKey] / d.totalTickets * 100) : 0;
+    for (const [agent, wm] of Object.entries(byAgentWeekly)) {
       const cur = wm[lastWk];
       const prev = wm[prevWk];
       if (!cur || !prev || cur.totalTickets < 5 || prev.totalTickets < 5) continue;
-      const curRate = cur.inspectedTickets / cur.totalTickets * 100;
-      const prevRate = prev.inspectedTickets / prev.totalTickets * 100;
+      const curRate = computeRate(cur);
+      const prevRate = computeRate(prev);
       if (curRate > SETTINGS.midRisk && curRate > prevRate * 1.5) {
         alerts.push({ type: 'trend', category: '代理恶化', name: agent, rate: curRate, total: cur.totalTickets, change: ((curRate - prevRate) / Math.max(prevRate, 0.1) * 100).toFixed(0) + '%' });
       }
     }
-    // 渠道环比恶化
-    for (const [ch, wm] of Object.entries(aggByChannelWeekly)) {
+    for (const [ch, wm] of Object.entries(byChannelWeekly)) {
       const cur = wm[lastWk];
       const prev = wm[prevWk];
       if (!cur || !prev || cur.totalTickets < 5 || prev.totalTickets < 5) continue;
-      const curRate = cur.inspectedTickets / cur.totalTickets * 100;
-      const prevRate = prev.inspectedTickets / prev.totalTickets * 100;
+      const curRate = computeRate(cur);
+      const prevRate = computeRate(prev);
       if (curRate > SETTINGS.midRisk && curRate > prevRate * 1.5) {
         alerts.push({ type: 'trend', category: '渠道恶化', name: ch, rate: curRate, total: cur.totalTickets, change: ((curRate - prevRate) / Math.max(prevRate, 0.1) * 100).toFixed(0) + '%' });
       }
@@ -650,6 +708,7 @@ async function loadAndProcess(file, fileDate) {
     const monthSet = new Set();
     Object.values(aggByChannelMonth).forEach(d => Object.keys(d.timeSeries).forEach(k => monthSet.add(k)));
     allMonthKeys = [...monthSet].sort();
+    if (typeof populateAlertFilters === 'function') populateAlertFilters();
     // 初始化选中渠道：综合查验率 Top6
     selectedChannels = Object.entries(aggByChannel)
       .filter(([k, v]) => k && v.totalTickets >= 20)
@@ -1461,6 +1520,12 @@ function renderDrilldownAgentFilter(allAgents, defaultAgents) {
 
 // 预警与明细
 function updateAlertTab() {
+  populateAlertFilters(); // 确保月份下拉已填充（数据加载后）
+  const monthText = alertMonthFilter === 'all' ? '全部月份' : alertMonthFilter;
+  const portText = alertPortFilter === 'domestic' ? '起运港' : (alertPortFilter === 'foreign' ? '目的港' : '综合');
+  const noteEl = document.getElementById('alertNote');
+  if (noteEl) noteEl.textContent = `当前筛选：${monthText} · ${portText}（阈值超则预警 + 周环比恶化）`;
+
   const alerts = generateAlerts();
   const tbody = document.getElementById('alertTableBody');
   if (!tbody) return;
@@ -1481,10 +1546,14 @@ function updateAlertTab() {
     }).join('');
   }
 
-  // 产品属性
-  renderTable('productTable', Object.entries(aggByProduct)
+  // 产品属性（按筛选范围重新聚合，按所选港口率排序）
+  const subset = getFilteredRecords();
+  const byProduct = aggregateBy(subset, r => r.productAttr);
+  const byCustomer = aggregateBy(subset, r => r.customer);
+
+  renderTable('productTable', Object.entries(byProduct)
     .filter(([k, v]) => k && v.totalTickets >= 5)
-    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .sort((a, b) => getAlertPortRate(b[1]) - getAlertPortRate(a[1]))
     .map(([k, v]) => ({
       name: k,
       total: v.totalTickets,
@@ -1496,9 +1565,9 @@ function updateAlertTab() {
   );
 
   // 客户
-  renderTable('customerTable', Object.entries(aggByCustomer)
+  renderTable('customerTable', Object.entries(byCustomer)
     .filter(([k, v]) => k && v.totalTickets >= 5)
-    .sort((a, b) => b[1].overallRate - a[1].overallRate)
+    .sort((a, b) => getAlertPortRate(b[1]) - getAlertPortRate(a[1]))
     .map(([k, v]) => ({
       name: k,
       total: v.totalTickets,
@@ -1831,6 +1900,8 @@ function collectSnapshot() {
     alert: {
       highInput: document.getElementById('highRiskInput')?.value || '',
       midInput: document.getElementById('midRiskInput')?.value || '',
+      alertMonth: alertMonthFilter,
+      alertPort: alertPortFilter,
       alertTableBody: document.getElementById('alertTableBody')?.innerHTML || '',
       productTable: document.getElementById('productTable')?.innerHTML || '',
       customerTable: document.getElementById('customerTable')?.innerHTML || '',
@@ -2159,6 +2230,16 @@ async function tryLoadFromHash() {
   if (snap.alert?.midInput !== undefined) {
     const el = document.getElementById('midRiskInput');
     if (el) el.value = snap.alert.midInput;
+  }
+  if (snap.alert?.alertMonth !== undefined) {
+    alertMonthFilter = snap.alert.alertMonth;
+    const el = document.getElementById('alertMonthSelect');
+    if (el) el.value = alertMonthFilter;
+  }
+  if (snap.alert?.alertPort !== undefined) {
+    alertPortFilter = snap.alert.alertPort;
+    const el = document.getElementById('alertPortSelect');
+    if (el) el.value = alertPortFilter;
   }
   if (snap.alert?.detailSearch !== undefined) {
     const el = document.getElementById('detailSearch');
