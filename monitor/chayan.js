@@ -47,6 +47,8 @@ let aggByChannelMonth = {}; // 渠道月度拆解
 let aggByChannelWeekly = {}; // 渠道周度拆解 {channel: {weekKey: {total, inspected, domestic}}}
 let allWeekKeys = [];    // 所有周Key（排序后）
 let allMonthKeys = [];   // 所有月份Key（排序后）
+// 渠道下钻的最新一次上下文，缓存给 chip 多选过滤器（用户点 chip 后只重画趋势图，不重跑整页）
+let lastDrilldownData = { channel: '', weeklyAgentMap: {}, sortedWeeks: [], agentOrder: [] };
 let selectedChannels = []; // 用户选中的渠道（用于趋势图）
 let channelTrendMetric = 'overall'; // 趋势图指标: 'overall' | 'domestic' | 'foreign'
 
@@ -1247,39 +1249,22 @@ function updateDrilldownTab() {
     chart.setOption(option, { notMerge: true, lazyUpdate: true });
   }
 
-  // 趋势图：当前渠道下各代理的起运港查验率周趋势
-  // 美国海运代理多时取 Top6（按上周票数），其余展示全部
+  // 趋势图：当前渠道下各代理的起运港查验率周趋势（代理可由用户多选）
   const trendDom = document.getElementById('drilldownTrendChart');
   const trendTitleEl = document.getElementById('drilldownTrendTitle');
+  // 该渠道全部代理（按上周票数降序）
+  const allAgents = [...rows].sort((a, b) => b.total - a.total).map(r => r.agent);
+  // 默认选择：美国海运代理 > 6 家时取前 6（保持旧体验），否则全选
+  const defaultAgents = (channel === '美国海运' && allAgents.length > 6) ? allAgents.slice(0, 6) : allAgents;
+
+  // 缓存上下文（chip 点击只需重画趋势图，不重跑整页）
+  lastDrilldownData = { channel, weeklyAgentMap, sortedWeeks, agentOrder: allAgents, defaultAgents };
+
   if (trendDom && sortedWeeks.length >= 2) {
-    // 确定要展示的代理列表（按上周票数降序）
-    const allAgents = [...rows].sort((a, b) => b.total - a.total).map(r => r.agent);
-    const isUsSea = channel === '美国海运';
-    let showAgents = allAgents;
-    if (isUsSea && allAgents.length > 6) {
-      showAgents = allAgents.slice(0, 6);
-    }
-    const showTopN = showAgents.length < allAgents.length;
-
-    if (trendTitleEl) {
-      trendTitleEl.textContent = `📈 ${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`;
-    }
-
-    const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#06b6d4', '#84cc16'];
-    const series = showAgents.map((agent, idx) => {
-      const data = sortedWeeks.map(wk => {
-        const d = weeklyAgentMap[wk] && weeklyAgentMap[wk][agent];
-        if (!d || d.total === 0) return null;
-        return parseFloat((d.domestic / d.total * 100).toFixed(1));
-      });
-      return { name: agent, data, lineStyle: { width: 2 }, itemStyle: { color: palette[idx % palette.length] } };
-    });
-    const chart = setChart('drilldownTrendChart', trendDom);
-    const option = createLineChartOption(`${channel}代理起运港查验率周趋势${showTopN ? '（Top' + showAgents.length + '）' : ''}`, sortedWeeks.map(weekShort), series);
-    option.color = palette.slice(0, series.length);
-    option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
-    option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
-    chart.setOption(option, { notMerge: true, lazyUpdate: true });
+    renderDrilldownAgentFilter(allAgents, defaultAgents);
+    renderAgentTrendChart(channel, weeklyAgentMap, sortedWeeks, defaultAgents);
+  } else if (trendTitleEl) {
+    trendTitleEl.textContent = `📈 ${channel}代理起运港查验率周趋势`;
   }
 
   // 表格：上周渠道代理明细
@@ -1414,6 +1399,64 @@ function renderMonthlyTable(headId, bodyId, metric, mMap, monthSummary, months, 
   }).join('');
 
   mBody.innerHTML = summaryRow + agentRows;
+}
+
+// 渲染下钻区"代理起运港查验率周趋势"图（按用户当前选中的代理列表 showAgents 重画）
+// showAgents 为空时清空图并把标题改成"请勾选代理"
+function renderAgentTrendChart(channel, weeklyAgentMap, sortedWeeks, showAgents) {
+  const trendDom = document.getElementById('drilldownTrendChart');
+  const trendTitleEl = document.getElementById('drilldownTrendTitle');
+  if (!trendDom) return;
+  const chart = setChart('drilldownTrendChart', trendDom);
+  const titleSuffix = showAgents.length === 0 ? '（请勾选代理）' : `（已选 ${showAgents.length} 家）`;
+  if (trendTitleEl) trendTitleEl.textContent = `📈 ${channel}代理起运港查验率周趋势${titleSuffix}`;
+  if (showAgents.length === 0) {
+    chart.clear();
+    return;
+  }
+  const palette = ['#d62929', '#e6a23c', '#1764e8', '#07c160', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#06b6d4', '#84cc16'];
+  const series = showAgents.map((agent, idx) => {
+    const data = sortedWeeks.map(wk => {
+      const d = weeklyAgentMap[wk] && weeklyAgentMap[wk][agent];
+      if (!d || d.total === 0) return null;
+      return parseFloat((d.domestic / d.total * 100).toFixed(1));
+    });
+    return { name: agent, data, lineStyle: { width: 2 }, itemStyle: { color: palette[idx % palette.length] } };
+  });
+  const option = createLineChartOption(`📈 ${channel}代理起运港查验率周趋势${titleSuffix}`, sortedWeeks.map(weekShort), series);
+  option.color = palette.slice(0, series.length);
+  option.legend = { data: series.map(s => s.name), bottom: 0, textStyle: { fontSize: 10 } };
+  option.grid = { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true };
+  chart.setOption(option, { notMerge: true, lazyUpdate: true });
+}
+
+// 渠道下钻的"代理多选 chip 过滤器"
+// 在 chart 标题下方渲染一行 chip，已选深色高亮、未选浅灰；点击 chip 切换选中并实时重画趋势图（不动其它列）
+function renderDrilldownAgentFilter(allAgents, defaultAgents) {
+  const filterEl = document.getElementById('drilldownAgentFilter');
+  if (!filterEl) return;
+  if (allAgents.length === 0) {
+    filterEl.innerHTML = '<span style="color:#999;font-size:11px">该渠道暂无代理数据</span>';
+    return;
+  }
+  const selected = new Set(defaultAgents);
+  filterEl.innerHTML =
+    `<span class="filter-label">代理选择：</span>` +
+    `<span class="filter-tip">（点 chip 切换；默认前 ${defaultAgents.length} 家）</span>` +
+    allAgents.map(a => {
+      const checked = selected.has(a);
+      return `<button type="button" class="agent-chip ${checked ? 'checked' : ''}" data-agent="${a}">${a}</button>`;
+    }).join('');
+  filterEl.querySelectorAll('.agent-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.agent;
+      if (selected.has(a)) { selected.delete(a); btn.classList.remove('checked'); }
+      else { selected.add(a); btn.classList.add('checked'); }
+      // 只重画趋势图（其它列不变），走缓存的上下文
+      const ctx = lastDrilldownData;
+      renderAgentTrendChart(ctx.channel, ctx.weeklyAgentMap, ctx.sortedWeeks, [...selected]);
+    });
+  });
 }
 
 // 预警与明细

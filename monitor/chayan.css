@@ -181,6 +181,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .channel-tag{padding:4px 10px;border-radius:12px;font-size:11px;background:#f0f0f0;color:#666;cursor:pointer;transition:all .15s;border:0.5px solid transparent;white-space:nowrap}
 .channel-tag.active{background:var(--primary);color:#fff;border-color:var(--primary-dark)}
 
+/* 渠道下钻"代理多选 chip 过滤器" */
+.agent-filter{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 16px 10px;background:#fafbfc;border-bottom:0.5px solid #f0f0f0}
+.agent-filter .filter-label{font-size:12px;font-weight:600;color:#333;margin-right:4px}
+.agent-filter .filter-tip{font-size:11px;color:#888;margin-right:6px}
+.agent-chip{
+  display:inline-block;
+  padding:3px 10px;
+  font-size:11px;
+  line-height:1.4;
+  border-radius:12px;
+  background:#f0f0f0;
+  color:#666;
+  border:0.5px solid transparent;
+  cursor:pointer;
+  transition:all .15s;
+  white-space:nowrap;
+  user-select:none;
+}
+.agent-chip:hover{background:#e6ebf2;color:#333}
+.agent-chip.checked{background:var(--primary);color:#fff;border-color:var(--primary-dark);font-weight:600}
+.agent-chip.checked:hover{background:var(--primary-dark)}
+
 /* ===================== 日度监控看板样式 ===================== */
 /* Tab 分隔 */
 .tab-sep{width:1px;background:var(--border);margin:8px 4px;flex:0 0 auto}
