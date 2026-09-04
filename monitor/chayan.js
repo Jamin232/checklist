@@ -43,6 +43,49 @@ const SAILING_ETA_PATTERN = /(?:已开船|已起航|已开航|已离港|航行�
 
 const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '清关', '末端提取', '派送'];
 
+// ===== 标准事件字典（event_code 归并，对齐「物流轨迹节点容器设计」）=====
+// 把 6 个日期列 + 状态备注统一归并为有序事件链；状态备注从"脆弱兜底"升级为"带优先级的同源输入"。
+// 事件 code -> 当前所在节点（即下一个等待的 SLA 节点）。null = 已完成(签收)。
+const EVENT_TO_NODE = {
+  extract:   '提取/装柜',   // 仓库出货/装柜完成 -> 等出口扫描
+  carrier_in:'出口扫描',    // 入承运商仓 -> 等离境
+  depart:    '到港',         // 离港/起飞/发车(DEPARTED) -> 等到港
+  arrive:    '清关',         // 到港/落地/到站(ARRIVED) -> 等清关
+  clearing:  '清关',         // 目的地清关中(进行) -> 等清关完成
+  cleared:   '末端提取',     // 清关完成/已提柜 -> 等末端提取
+  pickup:    '派送',         // 已提柜/提取 -> 等派送
+  delivering:'派送',         // 派送中 -> 等签收
+  delivered: null           // 已签收 -> 完成
+};
+
+// 事件 code 中文名（用于滞留页展示"最新节点"）
+const EVENT_CN = {
+  extract: '提取/装柜', carrier_in: '入承运商仓', depart: '离港(DEPARTED)',
+  arrive: '到港(ARRIVED)', clearing: '目的地清关中', cleared: '清关完成',
+  pickup: '已提柜/提取', delivering: '派送中', delivered: '已签收'
+};
+
+// 状态备注行 -> 标准事件 code（按优先级匹配，命中第一个即归并；"预计/待更新"类计划词不计入已发生事件）
+const REMARK_EVENT_PATTERNS = [
+  { re: /已签收|已送达/,                                  code: 'delivered' },
+  { re: /部分签收|派送中|在派送|已派送/,                  code: 'delivering' },
+  { re: /(已提柜|快递已提取|已提取)/,                     code: 'pickup' },
+  { re: /清完关|清关完成|已清关|待提取/,                   code: 'cleared' },
+  { re: /清关中|目的地查验/,                              code: 'clearing' },
+  { re: /落地|到站|抵达|到港/,                            code: 'arrive' },
+  { re: /已开船|已离港|船舶已离开|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车/, code: 'depart' },
+  { re: /国内查验|出口查验|启运地查验|查验放行|卡审结|上火车|装柜|入仓|交运|今天装柜/, code: 'extract' }
+];
+
+// 各渠道典型航程天数（用于"已离境"票的在途豁免兜底：代理未填预计到港时，按航程推定是否仍在途）
+// 口径：离境日 + 此天数 内视为"在途"，不报警；超过则视为"该到未到"，按离境后超期诊断。
+const TRANSIT_DAYS = {
+  '美国快递': 3,
+  '美国/欧洲空派专线': 4, '美国/欧洲空派快线': 4,
+  '美国海运美森': 12, '美国/其他海运普船': 18,
+  '铁路（快线）': 16, '铁路/陆运（专线）': 16
+};
+
 // 把"最后一个已发生里程碑"映射到"当前所在节点"（即下一节点的阈值）
 // 入承运商仓/仓库出货都视作已发生 提取/装柜；其下一步等待 出口扫描
 const MILESTONE_TO_NODE = {
@@ -53,86 +96,93 @@ const MILESTONE_TO_NODE = {
   finalPickup: '派送'     // 等待 签收（用 派送 阈值）
 };
 
-// 滞留检测主函数：返回 null 表示已完成或无数据；否则返回诊断结果
-// v2 改进：
-//  - 理赔/已结案类单据直接排除（excluded+reason）
-//  - 航行中且预计到港日未到：豁免（excluded+reason）
-//  - 航行中但已超过预计到港日：仍按 SLA 报警
-//  - SLA 无配置的节点：按 DEFAULT_STAGNATION_DAYS 兜底
+// 滞留检测主函数（v3：基于标准事件链 event_code 归并）
+//  - 6 个日期列 + 状态备注统一归并为有序事件链（见 buildEventChain）
+//  - 状态备注从"脆弱兜底"升级为"带优先级的同源输入"
+//  - 理赔/已结案排除；航行中(已离境且 ETA 未到)豁免；SLA 无配置节点按 DEFAULT_STAGNATION_DAYS 兜底
+function parseRemarkEvents(remark) {
+  if (!remark) return [];
+  const lines = String(remark).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const year = new Date().getFullYear();
+  const out = [];
+  for (const line of lines) {
+    // 取该行第一个日期（状态备注格式 "M/D 节点描述"，行首日期=事件发生日；"预计M/D"不计）
+    let date = null, m;
+    let re = /(\d{4})[-./](\d{1,2})[-./](\d{1,2})/g;
+    if ((m = re.exec(line)) !== null) date = new Date(+m[1], +m[2] - 1, +m[3]);
+    else {
+      re = /(^|[^\d])(\d{1,2})[-./月](\d{1,2})(?!\d)/g;
+      if ((m = re.exec(line)) !== null) date = new Date(year, +m[2] - 1, +m[3]);
+    }
+    if (!date || isNaN(date.getTime())) continue;
+    for (const p of REMARK_EVENT_PATTERNS) {
+      if (p.re.test(line)) { out.push({ code: p.code, date, raw: line }); break; }
+    }
+  }
+  return out;
+}
+
+// 构建标准事件链：结构化日期列 + 状态备注解析，合并去重（同 code 取最新；datecol 优先于 remark）
+function buildEventChain(rec) {
+  if (!rec) return { events: [], lastEvent: null, excluded: false };
+  if (isClaimRemark(rec.remark)) return { events: [], lastEvent: null, excluded: true, excludeReason: '理赔/已结案' };
+  const events = [];
+  const pushDate = (code, date) => { if (date) events.push({ code, date, source: 'datecol' }); };
+  pushDate('extract',    rec.warehouseOut);
+  pushDate('carrier_in', rec.carrierIn);
+  pushDate('depart',     rec.depart);
+  pushDate('arrive',     rec.arrive);
+  pushDate('pickup',     rec.finalPickup);
+  pushDate('delivered',  rec.signoff);
+  for (const e of parseRemarkEvents(rec.remark)) events.push({ ...e, source: 'remark' });
+  if (events.length === 0) return { events, lastEvent: null, excluded: false };
+
+  events.sort((a, b) => a.date - b.date);
+  const byCode = {};
+  for (const e of events) {
+    const ex = byCode[e.code];
+    if (!ex) byCode[e.code] = e;
+    else if (e.source === 'datecol' && ex.source !== 'datecol') byCode[e.code] = e;
+    else if (ex.source === 'datecol') { /* keep datecol */ }
+    else if (e.date >= ex.date) byCode[e.code] = e;
+  }
+  const merged = Object.values(byCode).sort((a, b) => a.date - b.date);
+  const lastEvent = merged[merged.length - 1];
+  let excluded = false, excludeReason = '';
+  const eta = extractEtaFromRemark(rec.remark);
+  if (lastEvent && lastEvent.code === 'delivered') { excluded = true; excludeReason = '已签收'; }
+  else if (lastEvent && lastEvent.code === 'depart') {
+    const ch = getChannelType(rec);
+    const inTransit = Math.floor((new Date() - lastEvent.date) / 86400000);
+    // 在途豁免：备注有明确预计到港且未到 → 豁免；否则按渠道典型航程推定（代理未填 ETA 也不误报）
+    if ((eta && eta >= new Date()) || inTransit <= (TRANSIT_DAYS[ch] || 10)) { excluded = true; excludeReason = '航行中(在途)'; }
+  }
+  return { events: merged, lastEvent, excluded, excludeReason, eta };
+}
+
 function determineStagnation(rec, nowOverride) {
   if (!rec) return null;
   if (rec.signoff) return null; // 已签收：非滞留
-
-  // 0. 理赔/已结案类单据直接排除
-  if (isClaimRemark(rec.remark)) {
-    return { excluded: true, reason: '理赔/已结案' };
-  }
-
-  // 1. 航行中判断：状态备注含"已开船/已离港"且有预计到港日
-  const eta = extractEtaFromRemark(rec.remark);
-  if (isSailingRemark(rec.remark) && eta) {
-    const now = nowOverride || new Date();
-    if (eta >= now) {
-      // 还在航程内，未到 ETA，豁免
-      return { excluded: true, reason: '航行中(ETA未到)' };
-    }
-    // 已过 ETA —— 算船迟到，按"逾期到达"继续诊断
-  }
-
-  // 2. 状态备注二次校准：尝试从最新状态备注里解析出更晚的"最新动态日期"
-  let remarkDate = null;
-  if (rec.remark) {
-    remarkDate = extractLatestDateFromRemark(rec.remark);
-  }
-
-  // 3. 找最后一个已发生的里程碑（按时间顺序取最大）
-  const milestones = [
-    { key: 'warehouseOut', date: rec.warehouseOut },
-    { key: 'carrierIn',    date: rec.carrierIn },
-    { key: 'depart',       date: rec.depart },
-    { key: 'arrive',       date: rec.arrive },
-    { key: 'finalPickup',  date: rec.finalPickup }
-  ].filter(m => m.date);
-
-  if (milestones.length === 0 && !remarkDate) return null; // 完全无数据
-
-  // 选最新里程碑；若状态备注解析出更晚日期，则用备注日期作"最新动态时间"
-  milestones.sort((a, b) => b.date - a.date);
-  let latestKey = milestones[0] ? milestones[0].key : null;
-  let latestDate = milestones[0] ? milestones[0].date : null;
-  if (remarkDate && (!latestDate || remarkDate > latestDate)) {
-    latestDate = remarkDate;
-    const parsedNode = extractNodeFromRemark(rec.remark);
-    if (parsedNode) {
-      const reverseMap = { '提取/装柜': 'warehouseOut', '出口扫描': 'carrierIn', '出境': 'depart', '到港': 'arrive', '清关': 'arrive', '末端提取': 'finalPickup', '派送': 'finalPickup' };
-      latestKey = reverseMap[parsedNode] || latestKey;
-    }
-  }
-
-  if (!latestDate) return null;
-  const currentNode = MILESTONE_TO_NODE[latestKey] || null;
+  const chain = buildEventChain(rec);
+  if (chain.excluded) return { excluded: true, reason: chain.excludeReason };
+  if (!chain.lastEvent) return null;
+  const code = chain.lastEvent.code;
+  const currentNode = EVENT_TO_NODE[code];
   if (!currentNode) return null;
-
   const channelType = getChannelType(rec);
-  if (!channelType) return { channelType: null, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型' };
+  if (!channelType) return { channelType: null, currentNode, latestDate: chain.lastEvent.date, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型', eventCode: code };
   const rule = SLA_RULES[channelType];
-  if (!rule) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则' };
-
-  // 4. 阈值查找：节点配置了阈值就用，否则用默认 5 天
+  if (!rule) return { channelType, currentNode, latestDate: chain.lastEvent.date, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则', eventCode: code };
   let threshold = rule[currentNode];
   let isDefault = false;
-  if (threshold == null) {
-    threshold = DEFAULT_STAGNATION_DAYS;
-    isDefault = true;
-  }
-
+  if (threshold == null) { threshold = DEFAULT_STAGNATION_DAYS; isDefault = true; }
   const now = nowOverride || new Date();
-  const elapsedDays = Math.floor((now - latestDate) / 86400000);
+  const elapsedDays = Math.floor((now - chain.lastEvent.date) / 86400000);
   const stagnant = elapsedDays > threshold;
   return {
-    channelType, currentNode, latestDate, threshold, isDefault,
+    channelType, currentNode, latestDate: chain.lastEvent.date, threshold, isDefault,
     elapsedDays, stagnant, stagnationDays: stagnant ? (elapsedDays - threshold) : 0,
-    excluded: false
+    excluded: false, eventCode: code
   };
 }
 
@@ -1855,13 +1905,14 @@ function updateStagnationTab() {
   const now = new Date();
   // 计算所有票的滞留诊断
   const diagList = [];
-  const excluded = { claim: 0, sailing: 0, late: 0 }; // 排除分类计数
+  const excluded = { claim: 0, sailing: 0, signed: 0 }; // 排除分类计数
   for (const rec of records) {
     const d = determineStagnation(rec, now);
     if (!d) continue;
     if (d.excluded) {
       if (d.reason === '理赔/已结案') excluded.claim++;
-      else if (d.reason === '航行中(ETA未到)') excluded.sailing++;
+      else if (d.reason === '航行中(在途)') excluded.sailing++;
+      else if (d.reason === '已签收') excluded.signed++;
       continue;
     }
     if (!d.stagnant) continue;
@@ -1887,7 +1938,7 @@ function updateStagnationTab() {
   const highCount = filtered.filter(x => x.d.stagnationDays >= 3).length;
   const agentSet = new Set(filtered.map(x => x.rec.agent).filter(Boolean));
   const customerSet = new Set(filtered.map(x => x.rec.customer).filter(Boolean));
-  const excludedTotal = excluded.claim + excluded.sailing;
+  const excludedTotal = excluded.claim + excluded.sailing + excluded.signed;
 
   const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
   setText('stagTotal', total.toLocaleString());
@@ -1901,7 +1952,10 @@ function updateStagnationTab() {
   // 表格上方注释
   const noteEl = document.getElementById('stagExcludedNote');
   if (noteEl) {
-    noteEl.innerHTML = `已排除 <b>${excludedTotal.toLocaleString()}</b> 票（理赔/已结案 <b>${excluded.claim}</b>，航行未到 ETA <b>${excluded.sailing}</b>）——这类单据无轨迹风险，按业务规则跳过`;
+    const exParts = [`理赔/已结案 <b>${excluded.claim}</b>`];
+    if (excluded.sailing) exParts.push(`航行中(在途) <b>${excluded.sailing}</b>`);
+    if (excluded.signed) exParts.push(`已签收(备注) <b>${excluded.signed}</b>`);
+    noteEl.innerHTML = `已排除 <b>${excludedTotal.toLocaleString()}</b> 票（${exParts.join('，')}）——这类单据无轨迹风险，按业务规则跳过`;
   }
 
   // 表格
@@ -1926,7 +1980,7 @@ function updateStagnationTab() {
       <td>${r.logisticChannel || '-'}</td>
       <td>${r.agent || '-'}</td>
       <td>${r.customer || '-'}</td>
-      <td>${d.currentNode}</td>
+      <td title="SLA 节点：${d.currentNode}">${EVENT_CN[d.eventCode] || d.currentNode}</td>
       <td>${dateStr}</td>
       <td style="text-align:right">${d.elapsedDays} 天</td>
       <td style="text-align:right" title="${d.isDefault ? 'SLA 无配置，按默认 5 天兜底' : ''}">${thLabel}</td>
