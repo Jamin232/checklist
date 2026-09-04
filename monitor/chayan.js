@@ -29,6 +29,18 @@ const SLA_RULES = {
   '铁路/陆运（专线）':  { '提取/装柜': null,'出口扫描': 10, '出境': 10, '到港': 15, '清关': 7,  '末端提取': 4,  '派送': 4 }
 };
 
+// 无 SLA 配置的节点（如"等待上火车/等待航班"），按事业部口径走默认天数
+const DEFAULT_STAGNATION_DAYS = 5;
+
+// 理赔/已结案类关键词（命中 → 不报警；这类单轨迹已结束，重点是赔付流程）
+const CLAIM_KEYWORDS = ['赔付', '理赔', '索赔', '货值', '月账单', '月结账单', '对账', '已结清', '已结案', '已赔付', '已提供货值', '待提供货值'];
+
+// 航行/运输途中关键词（命中 → 看 ETA：ETA 未到则豁免；已过 ETA 则按逾期报警）
+const SAILING_KEYWORDS = ['已开船', '已起航', '已开航', '已离港', '航行中', '船已开'];
+
+// 从状态备注里提取"已开船/已离港"后的"预计M/D到港"日期（同年）
+const SAILING_ETA_PATTERN = /(?:已开船|已起航|已开航|已离港|航行中|船已开)[^\d]*(\d{1,2})[\/.\-月](\d{1,2})\s*到港/;
+
 const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '清关', '末端提取', '派送'];
 
 // 把"最后一个已发生里程碑"映射到"当前所在节点"（即下一节点的阈值）
@@ -42,17 +54,38 @@ const MILESTONE_TO_NODE = {
 };
 
 // 滞留检测主函数：返回 null 表示已完成或无数据；否则返回诊断结果
+// v2 改进：
+//  - 理赔/已结案类单据直接排除（excluded+reason）
+//  - 航行中且预计到港日未到：豁免（excluded+reason）
+//  - 航行中但已超过预计到港日：仍按 SLA 报警
+//  - SLA 无配置的节点：按 DEFAULT_STAGNATION_DAYS 兜底
 function determineStagnation(rec, nowOverride) {
   if (!rec) return null;
   if (rec.signoff) return null; // 已签收：非滞留
 
-  // 状态备注二次校准：尝试从最新状态备注里解析出更晚的"最新动态日期"
+  // 0. 理赔/已结案类单据直接排除
+  if (isClaimRemark(rec.remark)) {
+    return { excluded: true, reason: '理赔/已结案' };
+  }
+
+  // 1. 航行中判断：状态备注含"已开船/已离港"且有预计到港日
+  const eta = extractEtaFromRemark(rec.remark);
+  if (isSailingRemark(rec.remark) && eta) {
+    const now = nowOverride || new Date();
+    if (eta >= now) {
+      // 还在航程内，未到 ETA，豁免
+      return { excluded: true, reason: '航行中(ETA未到)' };
+    }
+    // 已过 ETA —— 算船迟到，按"逾期到达"继续诊断
+  }
+
+  // 2. 状态备注二次校准：尝试从最新状态备注里解析出更晚的"最新动态日期"
   let remarkDate = null;
   if (rec.remark) {
     remarkDate = extractLatestDateFromRemark(rec.remark);
   }
 
-  // 找最后一个已发生的里程碑（按时间顺序取最大）
+  // 3. 找最后一个已发生的里程碑（按时间顺序取最大）
   const milestones = [
     { key: 'warehouseOut', date: rec.warehouseOut },
     { key: 'carrierIn',    date: rec.carrierIn },
@@ -63,17 +96,14 @@ function determineStagnation(rec, nowOverride) {
 
   if (milestones.length === 0 && !remarkDate) return null; // 完全无数据
 
-  // 选最新里程碑；若状态备注解析出更晚日期，且里程碑不是 末端提取（已签收前），则用备注日期
+  // 选最新里程碑；若状态备注解析出更晚日期，则用备注日期作"最新动态时间"
   milestones.sort((a, b) => b.date - a.date);
   let latestKey = milestones[0] ? milestones[0].key : null;
   let latestDate = milestones[0] ? milestones[0].date : null;
   if (remarkDate && (!latestDate || remarkDate > latestDate)) {
-    // 备注日期更晚——表示最新动态比系统日期还晚，用备注日期作"最新动态时间"
-    // 节点按状态备注的关键词判定（粗略），若解析不到则沿用最后里程碑节点
     latestDate = remarkDate;
     const parsedNode = extractNodeFromRemark(rec.remark);
     if (parsedNode) {
-      // 找到对应的反向 milestone 节点（粗略）
       const reverseMap = { '提取/装柜': 'warehouseOut', '出口扫描': 'carrierIn', '出境': 'depart', '到港': 'arrive', '清关': 'arrive', '末端提取': 'finalPickup', '派送': 'finalPickup' };
       latestKey = reverseMap[parsedNode] || latestKey;
     }
@@ -87,15 +117,22 @@ function determineStagnation(rec, nowOverride) {
   if (!channelType) return { channelType: null, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型' };
   const rule = SLA_RULES[channelType];
   if (!rule) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则' };
-  const threshold = rule[currentNode];
-  if (threshold == null) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '该节点无阈值' };
+
+  // 4. 阈值查找：节点配置了阈值就用，否则用默认 5 天
+  let threshold = rule[currentNode];
+  let isDefault = false;
+  if (threshold == null) {
+    threshold = DEFAULT_STAGNATION_DAYS;
+    isDefault = true;
+  }
 
   const now = nowOverride || new Date();
   const elapsedDays = Math.floor((now - latestDate) / 86400000);
   const stagnant = elapsedDays > threshold;
   return {
-    channelType, currentNode, latestDate, threshold,
-    elapsedDays, stagnant, stagnationDays: stagnant ? (elapsedDays - threshold) : 0
+    channelType, currentNode, latestDate, threshold, isDefault,
+    elapsedDays, stagnant, stagnationDays: stagnant ? (elapsedDays - threshold) : 0,
+    excluded: false
   };
 }
 
@@ -134,6 +171,30 @@ function extractNodeFromRemark(text) {
   if (/出境/.test(last)) return '出境';
   if (/起飞|开船|班列|发车|装柜|提货|提取|上船/.test(last)) return '出口扫描';
   return null;
+}
+
+// 是否理赔/已结案类状态备注（这类单轨迹结束，重点看赔付，不算滞留）
+function isClaimRemark(text) {
+  if (!text) return false;
+  for (const k of CLAIM_KEYWORDS) if (text.includes(k)) return true;
+  return false;
+}
+
+// 是否"航行/在途"中（开了船/已离港但未到港）
+function isSailingRemark(text) {
+  if (!text) return false;
+  for (const k of SAILING_KEYWORDS) if (text.includes(k)) return true;
+  return false;
+}
+
+// 从"已开船/已离港...预计M/D到港"里提取预计到港日期 Date（同年）。无则 null。
+function extractEtaFromRemark(text) {
+  if (!text) return null;
+  const m = SAILING_ETA_PATTERN.exec(text);
+  if (!m) return null;
+  const year = new Date().getFullYear();
+  const d = new Date(year, +m[1] - 1, +m[2]);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // 渠道类型识别：(类型, 素芸物流渠道关键词) -> 渠道类型
@@ -1794,9 +1855,16 @@ function updateStagnationTab() {
   const now = new Date();
   // 计算所有票的滞留诊断
   const diagList = [];
+  const excluded = { claim: 0, sailing: 0, late: 0 }; // 排除分类计数
   for (const rec of records) {
     const d = determineStagnation(rec, now);
-    if (!d || !d.stagnant) continue; // 只看滞留
+    if (!d) continue;
+    if (d.excluded) {
+      if (d.reason === '理赔/已结案') excluded.claim++;
+      else if (d.reason === '航行中(ETA未到)') excluded.sailing++;
+      continue;
+    }
+    if (!d.stagnant) continue;
     diagList.push({ rec, d });
   }
 
@@ -1819,12 +1887,22 @@ function updateStagnationTab() {
   const highCount = filtered.filter(x => x.d.stagnationDays >= 3).length;
   const agentSet = new Set(filtered.map(x => x.rec.agent).filter(Boolean));
   const customerSet = new Set(filtered.map(x => x.rec.customer).filter(Boolean));
+  const excludedTotal = excluded.claim + excluded.sailing;
 
   const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
   setText('stagTotal', total.toLocaleString());
   setText('stagHigh', highCount.toLocaleString());
   setText('stagAgents', agentSet.size.toLocaleString());
   setText('stagCustomers', customerSet.size.toLocaleString());
+  setText('stagExcluded', excludedTotal.toLocaleString());
+  setText('stagExcludedClaim', excluded.claim.toLocaleString());
+  setText('stagExcludedSailing', excluded.sailing.toLocaleString());
+
+  // 表格上方注释
+  const noteEl = document.getElementById('stagExcludedNote');
+  if (noteEl) {
+    noteEl.innerHTML = `已排除 <b>${excludedTotal.toLocaleString()}</b> 票（理赔/已结案 <b>${excluded.claim}</b>，航行未到 ETA <b>${excluded.sailing}</b>）——这类单据无轨迹风险，按业务规则跳过`;
+  }
 
   // 表格
   const tbody = document.getElementById('stagnationTableBody');
@@ -1841,6 +1919,7 @@ function updateStagnationTab() {
     const dateStr = d.latestDate ? formatDateYMD(d.latestDate) : '-';
     const remarkShort = (r.remark || '').replace(/\s+/g, ' ').slice(0, 40);
     const cls = d.stagnationDays >= 3 ? 'stagnation-high' : 'stagnation-mid';
+    const thLabel = d.isDefault ? `${d.threshold}天(默认)` : `${d.threshold}天`;
     return `<tr class="${cls}">
       <td title="${ticketNo}">${ticketShort}</td>
       <td>${r.country || '-'}${r.type ? '·' + r.type : ''}</td>
@@ -1850,7 +1929,7 @@ function updateStagnationTab() {
       <td>${d.currentNode}</td>
       <td>${dateStr}</td>
       <td style="text-align:right">${d.elapsedDays} 天</td>
-      <td style="text-align:right">${d.threshold} 天</td>
+      <td style="text-align:right" title="${d.isDefault ? 'SLA 无配置，按默认 5 天兜底' : ''}">${thLabel}</td>
       <td style="text-align:right;font-weight:700">+${d.stagnationDays} 天</td>
       <td title="${(r.remark || '').replace(/"/g,'&quot;')}">${remarkShort || '-'}</td>
     </tr>`;

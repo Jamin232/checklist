@@ -65,6 +65,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .kpi-foreign .kpi-num{color:var(--info)}
 .kpi-overall .kpi-num{color:var(--primary)}
 .kpi-week .kpi-num{color:var(--primary-dark)}
+.kpi-excluded{background:#f5f5f5}
+.kpi-excluded .kpi-num{color:var(--text-secondary);font-size:22px}
 
 /* 粒度切换 */
 .granularity-bar{display:flex;gap:6px;padding:8px 12px;background:#fff;border-bottom:0.5px solid #f0f0f0}
