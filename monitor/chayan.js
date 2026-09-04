@@ -13,7 +13,8 @@ const COUNTRY_MAP = {
 const SETTINGS = {
   highRisk: 5.0,   // 综合查验率 >5% 为高风险
   midRisk: 3.0,    // 综合查验率 3%~5% 为中风险
-  minSample: 10    // 统计最小样本数（低于此样本不预警）
+  minSample: 10,   // 统计最小样本数（低于此样本不预警）
+  minSampleBreakdown: 5  // 渠道/素芸渠道下钻到代理的细分最小样本数（低于此不列细分）
 };
 
 // 中文颜色配置（涨红跌绿）
@@ -478,6 +479,25 @@ function getFilteredRecords() {
   });
 }
 
+// 父维度(渠道大类/素芸渠道)下钻到代理的嵌套聚合：{parentKey:{agent:最终agg}}
+function aggregateNestedByAgent(subset, parentField) {
+  const res = {};
+  for (const rec of subset) {
+    const pk = rec[parentField];
+    const ag = rec.agent;
+    if (!pk || !ag) continue;
+    if (!res[pk]) res[pk] = {};
+    if (!res[pk][ag]) res[pk][ag] = createAgg();
+    addToAgg(res[pk][ag], rec);
+  }
+  for (const pk in res) {
+    for (const ag in res[pk]) {
+      res[pk][ag] = finalizeAgg(res[pk][ag]);
+    }
+  }
+  return res;
+}
+
 function generateAlerts() {
   const alerts = [];
   const subset = getFilteredRecords();
@@ -524,6 +544,34 @@ function generateAlerts() {
       alerts.push({ type: 'high', category: '素芸渠道', name: channel, rate, total: data.totalTickets });
     } else if (rate > SETTINGS.midRisk) {
       alerts.push({ type: 'mid', category: '素芸渠道', name: channel, rate, total: data.totalTickets });
+    }
+  }
+
+  // 渠道大类 × 代理 细分（总分并行：总见上，下面补细分；口径随 alertPortFilter）
+  const channelByAgent = aggregateNestedByAgent(subset, 'channel');
+  for (const [channel, agMap] of Object.entries(channelByAgent)) {
+    for (const [agent, data] of Object.entries(agMap)) {
+      if (data.totalTickets < SETTINGS.minSampleBreakdown) continue;
+      const rate = getAlertPortRate(data);
+      if (rate > SETTINGS.highRisk) {
+        alerts.push({ type: 'high', category: '渠道大类·代理', name: channel + ' › ' + agent, rate, total: data.totalTickets });
+      } else if (rate > SETTINGS.midRisk) {
+        alerts.push({ type: 'mid', category: '渠道大类·代理', name: channel + ' › ' + agent, rate, total: data.totalTickets });
+      }
+    }
+  }
+
+  // 素芸渠道 × 代理 细分
+  const logisticByAgent = aggregateNestedByAgent(subset, 'logisticChannel');
+  for (const [channel, agMap] of Object.entries(logisticByAgent)) {
+    for (const [agent, data] of Object.entries(agMap)) {
+      if (data.totalTickets < SETTINGS.minSampleBreakdown) continue;
+      const rate = getAlertPortRate(data);
+      if (rate > SETTINGS.highRisk) {
+        alerts.push({ type: 'high', category: '素芸渠道·代理', name: channel + ' › ' + agent, rate, total: data.totalTickets });
+      } else if (rate > SETTINGS.midRisk) {
+        alerts.push({ type: 'mid', category: '素芸渠道·代理', name: channel + ' › ' + agent, rate, total: data.totalTickets });
+      }
     }
   }
 
