@@ -39,7 +39,7 @@ const CLAIM_KEYWORDS = ['赔付', '理赔', '索赔', '货值', '月账单', '�
 const SAILING_KEYWORDS = ['已开船', '已起航', '已开航', '已离港', '航行中', '船已开'];
 
 // 从状态备注里提取"已开船/已离港"后的"预计M/D到港"日期（同年）
-const SAILING_ETA_PATTERN = /(?:已开船|已起航|已开航|已离港|航行中|船已开)[^\d]*(\d{1,2})[\/.\-月](\d{1,2})\s*到港/;
+const SAILING_ETA_PATTERN = /(?:已开船|已起航|已开航|已离港|航行中|船已开|已起飞|航班已飞|航司已飞|一程已飞|二程已飞|续程已飞|已发车|班列发车|离境)[^\d]*(\d{1,2})[\/.\-月](\d{1,2})\s*(到港|落地|到站|抵达)/;
 
 const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '清关', '末端提取', '派送'];
 
@@ -48,12 +48,13 @@ const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '
 // 事件 code -> 当前所在节点（即下一个等待的 SLA 节点）。null = 已完成(签收)。
 const EVENT_TO_NODE = {
   extract:   '提取/装柜',   // 仓库出货/装柜完成 -> 等出口扫描
-  carrier_in:'出口扫描',    // 入承运商仓 -> 等离境
-  depart:    '到港',         // 离港/起飞/发车(DEPARTED) -> 等到港
+  carrier_in:'出口扫描',    // 入承运商仓 -> 等离境（v3.1：仅在无装柜事件时作为最新；装柜完成则被取代）
+  depart:    '到港',         // 离港/起飞/发车/离境(DEPARTED) -> 等到港
   arrive:    '清关',         // 到港/落地/到站(ARRIVED) -> 等清关
   clearing:  '清关',         // 目的地清关中(进行) -> 等清关完成
-  cleared:   '末端提取',     // 清关完成/已提柜 -> 等末端提取
+  cleared:   '末端提取',     // 清关完成/查验放行/已提柜 -> 等末端提取
   pickup:    '派送',         // 已提柜/提取 -> 等派送
+  transit:   '派送',         // 转运中(已上火车/卡车转运) -> 等派送
   delivering:'派送',         // 派送中 -> 等签收
   delivered: null           // 已签收 -> 完成
 };
@@ -62,19 +63,20 @@ const EVENT_TO_NODE = {
 const EVENT_CN = {
   extract: '提取/装柜', carrier_in: '入承运商仓', depart: '离港(DEPARTED)',
   arrive: '到港(ARRIVED)', clearing: '目的地清关中', cleared: '清关完成',
-  pickup: '已提柜/提取', delivering: '派送中', delivered: '已签收'
+  pickup: '已提柜/提取', transit: '转运中', delivering: '派送中', delivered: '已签收'
 };
 
-// 状态备注行 -> 标准事件 code（按优先级匹配，命中第一个即归并；"预计/待更新"类计划词不计入已发生事件）
+// 状态备注行 -> 标准事件 code（v3.1：预测语"预计...到港"先清洗再匹配；arrive 要求"已"前缀实到；查验放行归 cleared）
 const REMARK_EVENT_PATTERNS = [
   { re: /已签收|已送达/,                                  code: 'delivered' },
   { re: /部分签收|派送中|在派送|已派送/,                  code: 'delivering' },
+  { re: /已上火车|卡车转运|铁路转运|转运中/,              code: 'transit' },
   { re: /(已提柜|快递已提取|已提取)/,                     code: 'pickup' },
-  { re: /清完关|清关完成|已清关|待提取/,                   code: 'cleared' },
-  { re: /清关中|目的地查验/,                              code: 'clearing' },
-  { re: /落地|到站|抵达|到港/,                            code: 'arrive' },
-  { re: /已开船|已离港|船舶已离开|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车/, code: 'depart' },
-  { re: /国内查验|出口查验|启运地查验|查验放行|卡审结|上火车|装柜|入仓|交运|今天装柜/, code: 'extract' }
+  { re: /清完关|清关完成|已清关|查验已放行|查验放行|待提取/, code: 'cleared' },
+  { re: /清关中|目的地查验|查验中/,                       code: 'clearing' },
+  { re: /已到港|已抵达|已落地|已到站/,                     code: 'arrive' },
+  { re: /已开船|已离港|船舶已离开|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离境/, code: 'depart' },
+  { re: /国内查验|出口查验|启运地查验|卡审结|装柜|已装柜|入仓|交运|今天装柜/, code: 'extract' }
 ];
 
 // 各渠道典型航程天数（用于"已离境"票的在途豁免兜底：代理未填预计到港时，按航程推定是否仍在途）
@@ -96,17 +98,21 @@ const MILESTONE_TO_NODE = {
   finalPickup: '派送'     // 等待 签收（用 派送 阈值）
 };
 
-// 滞留检测主函数（v3：基于标准事件链 event_code 归并）
-//  - 6 个日期列 + 状态备注统一归并为有序事件链（见 buildEventChain）
-//  - 状态备注从"脆弱兜底"升级为"带优先级的同源输入"
-//  - 理赔/已结案排除；航行中(已离境且 ETA 未到)豁免；SLA 无配置节点按 DEFAULT_STAGNATION_DAYS 兜底
+// 滞留检测主函数（v3.1：标准事件链 event_code 归并 + 多项语义修正）
+//  - 6 个日期列 + 状态备注统一归并为有序事件链；预测语"预计...到港"清洗后再匹配（避免被误归 arrive）
+//  - 语义取代：装柜完成 → 入承运商仓不再作为最新；离港/到港/清关/提柜/派送 逐级 supersede
+//  - 理赔/已结案排除；航行中豁免：代理填了 ETA 则以 ETA 为准（ETA 已过 = 该到未到 = 真滞留，不豁免）；未填则按 TRANSIT_DAYS 推定
+//  - SLA 无配置节点按 DEFAULT_STAGNATION_DAYS 兜底
 function parseRemarkEvents(remark) {
   if (!remark) return [];
   const lines = String(remark).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   const year = new Date().getFullYear();
   const out = [];
+  // v3.1 预测语清洗：预计...到港/抵达/落地/到站/到达/放行/装船/开船/起飞/发车/装柜/提柜/查验/装车/离港/离境/派送/签收/清关
+  // 避免"预计9/3到港"被误归为 arrive；保留行首真实事件日期。
+  const predictRe = /预计[^,，\n。]*?(到港|抵达|落地|到站|到达|派送|签收|清关|放行|装船|开船|起飞|发车|装柜|提柜|查验|装车|离港|离境)/g;
   for (const line of lines) {
-    // 取该行第一个日期（状态备注格式 "M/D 节点描述"，行首日期=事件发生日；"预计M/D"不计）
+    // 取该行第一个日期（状态备注格式 "M/D 节点描述"，行首日期=事件发生日）
     let date = null, m;
     let re = /(\d{4})[-./](\d{1,2})[-./](\d{1,2})/g;
     if ((m = re.exec(line)) !== null) date = new Date(+m[1], +m[2] - 1, +m[3]);
@@ -115,8 +121,10 @@ function parseRemarkEvents(remark) {
       if ((m = re.exec(line)) !== null) date = new Date(year, +m[2] - 1, +m[3]);
     }
     if (!date || isNaN(date.getTime())) continue;
+    // 清洗"预计..."子句后做模式匹配，避免预测被误归为已发生事件
+    const cleanedLine = line.replace(predictRe, '');
     for (const p of REMARK_EVENT_PATTERNS) {
-      if (p.re.test(line)) { out.push({ code: p.code, date, raw: line }); break; }
+      if (p.re.test(cleanedLine)) { out.push({ code: p.code, date, raw: line }); break; }
     }
   }
   return out;
@@ -146,6 +154,9 @@ function buildEventChain(rec) {
     else if (ex.source === 'datecol') { /* keep datecol */ }
     else if (e.date >= ex.date) byCode[e.code] = e;
   }
+  // v3.1 语义取代：装柜完成 → 入承运商仓不再作为最新里程碑
+  // （曾出现 carrierIn 列日期晚于 装柜 remark，导致仍报"入承运商仓"，掩盖真实节点）
+  if (byCode.extract) delete byCode.carrier_in;
   const merged = Object.values(byCode).sort((a, b) => a.date - b.date);
   const lastEvent = merged[merged.length - 1];
   let excluded = false, excludeReason = '';
@@ -154,8 +165,13 @@ function buildEventChain(rec) {
   else if (lastEvent && lastEvent.code === 'depart') {
     const ch = getChannelType(rec);
     const inTransit = Math.floor((new Date() - lastEvent.date) / 86400000);
-    // 在途豁免：备注有明确预计到港且未到 → 豁免；否则按渠道典型航程推定（代理未填 ETA 也不误报）
-    if ((eta && eta >= new Date()) || inTransit <= (TRANSIT_DAYS[ch] || 10)) { excluded = true; excludeReason = '航行中(在途)'; }
+    // v3.1 在途豁免：
+    //  代理填了预计到港 → 以 ETA 为准（ETA 未到才豁免；ETA 已过 = 该到未到 = 真滞留，不豁免）
+    //  代理未填 ETA → 按渠道典型航程 TRANSIT_DAYS 推定（兜底）
+    let inTransitValid;
+    if (eta) inTransitValid = eta >= new Date();
+    else     inTransitValid = inTransit <= (TRANSIT_DAYS[ch] || 10);
+    if (inTransitValid) { excluded = true; excludeReason = '航行中(在途)'; }
   }
   return { events: merged, lastEvent, excluded, excludeReason, eta };
 }
