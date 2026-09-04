@@ -17,6 +17,147 @@ const SETTINGS = {
   minSampleBreakdown: 5  // 渠道/素芸渠道下钻到代理的细分最小样本数（低于此不列细分）
 };
 
+// 物流跟踪状态提醒节点（按事业部 Word 文档中的 SLA 表）
+// 键：渠道类型；值：节点 -> 阈值(天)。null 表示无阈值（如***或非时段类规则）
+const SLA_RULES = {
+  '美国快递':           { '提取/装柜': 3,  '出口扫描': 7,  '出境': null,'到港': 2,  '清关': 2,  '末端提取': null,'派送': 2 },
+  '美国/欧洲空派专线':  { '提取/装柜': null,'出口扫描': 7,  '出境': null,'到港': 3,  '清关': 6,  '末端提取': 4,  '派送': 4 },
+  '美国/欧洲空派快线':  { '提取/装柜': null,'出口扫描': 4,  '出境': null,'到港': 2,  '清关': 4,  '末端提取': 4,  '派送': 4 },
+  '美国海运美森':       { '提取/装柜': null,'出口扫描': null,'出境': null,'到港': null,'清关': 7,  '末端提取': 7,  '派送': 7 },
+  '美国/其他海运普船':  { '提取/装柜': 7,  '出口扫描': 7,  '出境': null,'到港': null,'清关': 14, '末端提取': 14, '派送': 7 },
+  '铁路（快线）':       { '提取/装柜': null,'出口扫描': 10, '出境': 10, '到港': 15, '清关': 7,  '末端提取': 4,  '派送': 4 },
+  '铁路/陆运（专线）':  { '提取/装柜': null,'出口扫描': 10, '出境': 10, '到港': 15, '清关': 7,  '末端提取': 4,  '派送': 4 }
+};
+
+const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '清关', '末端提取', '派送'];
+
+// 把"最后一个已发生里程碑"映射到"当前所在节点"（即下一节点的阈值）
+// 入承运商仓/仓库出货都视作已发生 提取/装柜；其下一步等待 出口扫描
+const MILESTONE_TO_NODE = {
+  warehouseOut: '提取/装柜',
+  carrierIn: '出口扫描',
+  depart: '到港',         // 跨过 出口扫描/出境，直接等 到港（与"到港"列的阈值匹配）
+  arrive: '清关',         // 跨过 提柜，直接等 末端提取（用 清关 阈值，因提柜未单独记录）
+  finalPickup: '派送'     // 等待 签收（用 派送 阈值）
+};
+
+// 滞留检测主函数：返回 null 表示已完成或无数据；否则返回诊断结果
+function determineStagnation(rec, nowOverride) {
+  if (!rec) return null;
+  if (rec.signoff) return null; // 已签收：非滞留
+
+  // 状态备注二次校准：尝试从最新状态备注里解析出更晚的"最新动态日期"
+  let remarkDate = null;
+  if (rec.remark) {
+    remarkDate = extractLatestDateFromRemark(rec.remark);
+  }
+
+  // 找最后一个已发生的里程碑（按时间顺序取最大）
+  const milestones = [
+    { key: 'warehouseOut', date: rec.warehouseOut },
+    { key: 'carrierIn',    date: rec.carrierIn },
+    { key: 'depart',       date: rec.depart },
+    { key: 'arrive',       date: rec.arrive },
+    { key: 'finalPickup',  date: rec.finalPickup }
+  ].filter(m => m.date);
+
+  if (milestones.length === 0 && !remarkDate) return null; // 完全无数据
+
+  // 选最新里程碑；若状态备注解析出更晚日期，且里程碑不是 末端提取（已签收前），则用备注日期
+  milestones.sort((a, b) => b.date - a.date);
+  let latestKey = milestones[0] ? milestones[0].key : null;
+  let latestDate = milestones[0] ? milestones[0].date : null;
+  if (remarkDate && (!latestDate || remarkDate > latestDate)) {
+    // 备注日期更晚——表示最新动态比系统日期还晚，用备注日期作"最新动态时间"
+    // 节点按状态备注的关键词判定（粗略），若解析不到则沿用最后里程碑节点
+    latestDate = remarkDate;
+    const parsedNode = extractNodeFromRemark(rec.remark);
+    if (parsedNode) {
+      // 找到对应的反向 milestone 节点（粗略）
+      const reverseMap = { '提取/装柜': 'warehouseOut', '出口扫描': 'carrierIn', '出境': 'depart', '到港': 'arrive', '清关': 'arrive', '末端提取': 'finalPickup', '派送': 'finalPickup' };
+      latestKey = reverseMap[parsedNode] || latestKey;
+    }
+  }
+
+  if (!latestDate) return null;
+  const currentNode = MILESTONE_TO_NODE[latestKey] || null;
+  if (!currentNode) return null;
+
+  const channelType = getChannelType(rec);
+  if (!channelType) return { channelType: null, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型' };
+  const rule = SLA_RULES[channelType];
+  if (!rule) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则' };
+  const threshold = rule[currentNode];
+  if (threshold == null) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '该节点无阈值' };
+
+  const now = nowOverride || new Date();
+  const elapsedDays = Math.floor((now - latestDate) / 86400000);
+  const stagnant = elapsedDays > threshold;
+  return {
+    channelType, currentNode, latestDate, threshold,
+    elapsedDays, stagnant, stagnationDays: stagnant ? (elapsedDays - threshold) : 0
+  };
+}
+
+// 从状态备注里尝试提取最新动态日期（YYYY-MM-DD 形式返回）。无则 null。
+function extractLatestDateFromRemark(text) {
+  if (!text) return null;
+  // 找所有 M/D 或 M-D 或 M.D 形式（同年，2026），用本年；以及完整 YYYY-MM-DD
+  const year = new Date().getFullYear();
+  let latest = null;
+  // 1) 完整日期（2026-8-25 / 2026/8/25 / 2026.8.25）
+  let re = /(\d{4})[-./](\d{1,2})[-./](\d{1,2})/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!isNaN(d.getTime())) { if (!latest || d > latest) latest = d; }
+  }
+  // 2) 短日期 M/D 或 M-D 或 M.D（视为本年）
+  re = /(^|[^\d])(\d{1,2})[-./月](\d{1,2})(?!\d)/g;
+  while ((m = re.exec(text)) !== null) {
+    const d = new Date(year, +m[2] - 1, +m[3]);
+    if (!isNaN(d.getTime())) { if (!latest || d > latest) latest = d; }
+  }
+  return latest;
+}
+
+// 从状态备注里尝试判定当前节点（按关键词）
+function extractNodeFromRemark(text) {
+  if (!text) return null;
+  // 优先取最后一行（最新动态）
+  const lines = String(text).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const last = lines[lines.length - 1] || '';
+  if (/派送|签收|送货|派件/.test(last)) return '派送';
+  if (/末端|提取|提货|派件|派送/.test(last)) return '末端提取';
+  if (/清关|查验|扣关|扣留/.test(last)) return '清关';
+  if (/到港|落地|到站|到达/.test(last)) return '到港';
+  if (/出境/.test(last)) return '出境';
+  if (/起飞|开船|班列|发车|装柜|提货|提取|上船/.test(last)) return '出口扫描';
+  return null;
+}
+
+// 渠道类型识别：(类型, 素芸物流渠道关键词) -> 渠道类型
+function getChannelType(rec) {
+  const type = String(rec.type || '').trim();
+  const log = String(rec.logisticChannel || '');
+  if (type === '快递') return '美国快递';
+  if (type === '海运') {
+    if (log.includes('美森')) return '美国海运美森';
+    return '美国/其他海运普船';
+  }
+  if (type === '空运') {
+    if (log.includes('快线')) return '美国/欧洲空派快线';
+    if (log.includes('专线')) return '美国/欧洲空派专线';
+    return '美国/欧洲空派专线';
+  }
+  if (type === '铁路') {
+    if (log.includes('快线')) return '铁路（快线）';
+    return '铁路/陆运（专线）';
+  }
+  if (type === '陆运') return '铁路/陆运（专线）';
+  return null;
+}
+
 // 中文颜色配置（涨红跌绿）
 const COLORS = {
   primary: '#07c160',
@@ -309,7 +450,17 @@ function processData(rows) {
       boxes: safeNum(row['箱数']),
       pieces: safeNum(row['件数']),
       weight: safeNum(row['毛重']),
-      volume: safeNum(row['方数CBM'])
+      volume: safeNum(row['方数CBM']),
+      // 里程碑日期（用于滞留检测）
+      warehouseOut: parseDate(row['仓库出货日期']),
+      carrierIn: parseDate(row['入承运商仓日期']),
+      depart: parseDate(row['起运日期']),
+      arrive: parseDate(row['到港日期']),
+      finalPickup: parseDate(row['末端提取日']),
+      signoff: parseDate(row['实际签收时间\n（当地时间）']),
+      // 事业部维度
+      operator: safeStr(row['操作负责人']),
+      salesName: safeStr(row['销售名'])
     });
   }
 
@@ -1627,6 +1778,146 @@ function updateAlertTab() {
   );
 }
 
+// ===================== 滞留预警页 =====================
+
+let stagnationFiltersBound = false; // 滞留筛选器事件是否已绑定
+let stagnationChannelFilter = 'all';
+let stagnationLogisticFilter = 'all';
+let stagnationAgentFilter = 'all';
+let stagnationCustomerFilter = 'all';
+let stagnationNodeFilter = 'all';
+let stagnationMinDays = 0;
+
+function updateStagnationTab() {
+  populateStagnationFilters();
+
+  const now = new Date();
+  // 计算所有票的滞留诊断
+  const diagList = [];
+  for (const rec of records) {
+    const d = determineStagnation(rec, now);
+    if (!d || !d.stagnant) continue; // 只看滞留
+    diagList.push({ rec, d });
+  }
+
+  // 应用筛选
+  const filtered = diagList.filter(x => {
+    if (stagnationChannelFilter !== 'all' && x.rec.channel !== stagnationChannelFilter) return false;
+    if (stagnationLogisticFilter !== 'all' && x.rec.logisticChannel !== stagnationLogisticFilter) return false;
+    if (stagnationAgentFilter !== 'all' && x.rec.agent !== stagnationAgentFilter) return false;
+    if (stagnationCustomerFilter !== 'all' && x.rec.customer !== stagnationCustomerFilter) return false;
+    if (stagnationNodeFilter !== 'all' && x.d.currentNode !== stagnationNodeFilter) return false;
+    if (x.d.stagnationDays < stagnationMinDays) return false;
+    return true;
+  });
+
+  // 排序：按滞留天数降序
+  filtered.sort((a, b) => b.d.stagnationDays - a.d.stagnationDays);
+
+  // KPI
+  const total = filtered.length;
+  const highCount = filtered.filter(x => x.d.stagnationDays >= 3).length;
+  const agentSet = new Set(filtered.map(x => x.rec.agent).filter(Boolean));
+  const customerSet = new Set(filtered.map(x => x.rec.customer).filter(Boolean));
+
+  const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+  setText('stagTotal', total.toLocaleString());
+  setText('stagHigh', highCount.toLocaleString());
+  setText('stagAgents', agentSet.size.toLocaleString());
+  setText('stagCustomers', customerSet.size.toLocaleString());
+
+  // 表格
+  const tbody = document.getElementById('stagnationTableBody');
+  if (!tbody) return;
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#999;padding:20px">当前筛选下无滞留订单 🎉</td></tr>';
+    return;
+  }
+  // 截断长单号
+  const tr = (x) => {
+    const r = x.rec, d = x.d;
+    const ticketNo = (r.tickets && r.tickets[0]) || '';
+    const ticketShort = ticketNo.length > 14 ? ticketNo.slice(0, 12) + '…' : ticketNo;
+    const dateStr = d.latestDate ? formatDateYMD(d.latestDate) : '-';
+    const remarkShort = (r.remark || '').replace(/\s+/g, ' ').slice(0, 40);
+    const cls = d.stagnationDays >= 3 ? 'stagnation-high' : 'stagnation-mid';
+    return `<tr class="${cls}">
+      <td title="${ticketNo}">${ticketShort}</td>
+      <td>${r.country || '-'}${r.type ? '·' + r.type : ''}</td>
+      <td>${r.logisticChannel || '-'}</td>
+      <td>${r.agent || '-'}</td>
+      <td>${r.customer || '-'}</td>
+      <td>${d.currentNode}</td>
+      <td>${dateStr}</td>
+      <td style="text-align:right">${d.elapsedDays} 天</td>
+      <td style="text-align:right">${d.threshold} 天</td>
+      <td style="text-align:right;font-weight:700">+${d.stagnationDays} 天</td>
+      <td title="${(r.remark || '').replace(/"/g,'&quot;')}">${remarkShort || '-'}</td>
+    </tr>`;
+  };
+  // 限制渲染行数（防卡顿）
+  const MAX = 500;
+  const display = filtered.slice(0, MAX);
+  tbody.innerHTML = display.map(tr).join('');
+  if (filtered.length > MAX) {
+    tbody.innerHTML += `<tr><td colspan="11" style="text-align:center;color:#999;padding:10px">仅展示前 ${MAX} 行（共 ${filtered.length} 条），请用筛选缩窄范围</td></tr>`;
+  }
+}
+
+function formatDateYMD(d) {
+  if (!d) return '-';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function populateStagnationFilters() {
+  // 从 records 提取 distinct 值
+  const channels = new Set(), logistics = new Set(), agents = new Set(), customers = new Set();
+  for (const r of records) {
+    if (r.channel) channels.add(r.channel);
+    if (r.logisticChannel) logistics.add(r.logisticChannel);
+    if (r.agent) agents.add(r.agent);
+    if (r.customer) customers.add(r.customer);
+  }
+  const fill = (id, set, currentVal) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = currentVal !== undefined ? currentVal : el.value;
+    el.innerHTML = '<option value="all">全部</option>' + [...set].sort().map(v => `<option value="${v.replace(/"/g,'&quot;')}">${v}</option>`).join('');
+    if ([...set].includes(cur) || cur === 'all') el.value = cur;
+  };
+  fill('stagChannelSelect', channels, stagnationChannelFilter);
+  fill('stagLogisticSelect', logistics, stagnationLogisticFilter);
+  fill('stagAgentSelect', agents, stagnationAgentFilter);
+  fill('stagCustomerSelect', customers, stagnationCustomerFilter);
+  // 节点固定列表
+  const nodeEl = document.getElementById('stagNodeSelect');
+  if (nodeEl) {
+    nodeEl.innerHTML = '<option value="all">全部</option>' + STAGNATION_NODES.map(n => `<option value="${n}">${n}</option>`).join('');
+    nodeEl.value = stagnationNodeFilter;
+  }
+  const daysEl = document.getElementById('stagMinDays');
+  if (daysEl) daysEl.value = stagnationMinDays;
+
+  if (!stagnationFiltersBound) {
+    const bind = (id, fn) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', () => { fn(el.value); updateStagnationTab(); });
+    };
+    bind('stagChannelSelect', v => stagnationChannelFilter = v);
+    bind('stagLogisticSelect', v => stagnationLogisticFilter = v);
+    bind('stagAgentSelect', v => stagnationAgentFilter = v);
+    bind('stagCustomerSelect', v => stagnationCustomerFilter = v);
+    bind('stagNodeSelect', v => stagnationNodeFilter = v);
+    const daysInput = document.getElementById('stagMinDays');
+    if (daysInput) daysInput.addEventListener('change', () => { stagnationMinDays = parseInt(daysInput.value || 0, 10) || 0; updateStagnationTab(); });
+    stagnationFiltersBound = true;
+  }
+}
+
 // 通用表格渲染
 function renderTable(tableId, rows, headers) {
   const table = document.getElementById(tableId);
@@ -2461,6 +2752,7 @@ function switchTab(tabName) {
       const searchInput = document.getElementById('detailSearch');
       filterDetailTable(searchInput ? searchInput.value : '');
     }
+    if (tabName === 'stagnation') updateStagnationTab();
     // 仓配监控看板（独立数据源：仓配每日报表）
     if (tabName === 'warehouse' && typeof Warehouse !== 'undefined') Warehouse.render();
 

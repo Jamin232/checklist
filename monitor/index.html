@@ -7,7 +7,7 @@
 <!-- CDN 依赖 -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<link rel="stylesheet" href="chayan.css?v=20260904a">
+<link rel="stylesheet" href="chayan.css?v=20260904b">
 </head>
 <body>
 <div class="app">
@@ -39,6 +39,7 @@
     <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
     <div class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</div>
     <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
+    <div class="tab-btn" data-tab="stagnation" onclick="switchTab('stagnation')">🚚 滞留</div>
     <button class="export-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
     <button class="export-btn" id="shareBtn" onclick="generateShareLink()" style="display:none">🔗 分享链接</button>
     <button class="export-btn" id="uploadTrackBtn" onclick="openTrackUpload()">📊 上传跟踪表</button>
@@ -352,6 +353,55 @@
       </div>
     </div>
 
+    <!-- ===== 滞留预警 ===== -->
+    <div id="pane-stagnation" class="tab-pane">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">🚚 滞留预警（按事业部 SLA 节点阈值）</div>
+          <span class="section-note" id="stagnationNote">基于里程碑日期 vs 当前时间，超阈值即视为滞留</span>
+        </div>
+        <div class="threshold-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+          <label>渠道大类：<select id="stagChannelSelect" class="threshold-input" style="width:140px"></select></label>
+          <label>素芸渠道：<select id="stagLogisticSelect" class="threshold-input" style="width:160px"></select></label>
+          <label>代理：<select id="stagAgentSelect" class="threshold-input" style="width:120px"></select></label>
+          <label>客户/事业部：<select id="stagCustomerSelect" class="threshold-input" style="width:140px"></select></label>
+          <label>当前节点：<select id="stagNodeSelect" class="threshold-input" style="width:120px"></select></label>
+          <label>仅看 ≥<input type="number" id="stagMinDays" class="threshold-input" min="0" value="0" style="width:50px">天</label>
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card kpi-domestic">
+          <div class="kpi-num" id="stagTotal">--</div>
+          <div class="kpi-label">滞留票数</div>
+        </div>
+        <div class="kpi-card kpi-foreign">
+          <div class="kpi-num" id="stagHigh">--</div>
+          <div class="kpi-label">高滞留(≥3天)票数</div>
+        </div>
+        <div class="kpi-card kpi-overall">
+          <div class="kpi-num" id="stagAgents">--</div>
+          <div class="kpi-label">涉及代理</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-num" id="stagCustomers">--</div>
+          <div class="kpi-label">涉及客户/事业部</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">滞留订单明细（按滞留天数降序）</div>
+        </div>
+        <div class="table-wrap" style="max-height:600px;overflow:auto">
+          <table class="data-table stagnation-table">
+            <thead><tr><th>单号</th><th>国家·类型</th><th>素芸渠道</th><th>代理</th><th>客户/事业部</th><th>当前节点</th><th>最新动态日期</th><th>已停留</th><th>阈值</th><th>滞留</th><th>状态备注</th></tr></thead>
+            <tbody id="stagnationTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== 日度监控：总览 ===== -->
     <div id="pane-d_overview" class="tab-pane">
       <div class="kpi-row" id="ov-cards"></div>
@@ -553,7 +603,7 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script src="chayan.js?v=20260904a"></script>
+<script src="chayan.js?v=20260904b"></script>
 <script src="daily.js?v=20260826f"></script>
 <script src="warehouse.js?v=20260826f"></script>
 <script>
