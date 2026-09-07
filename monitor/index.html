@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>物流运营监控</title>
 <!-- 依赖：自托管于本仓库，去除外网 CDN 依赖（避免 jsdelivr 等不可达导致页面挂起） -->
-<script src="xlsx.full.min.js?v=0.20.1"></script>
-<script src="echarts.min.js?v=5.5.0"></script>
+<!-- 全部加 defer：并行下载、HTML 先解析完、UI 先出来，脚本在 DOM 准备好后按序执行，避免大库阻塞主线程导致"页面无响应" -->
+<script defer src="xlsx.full.min.js?v=0.20.1"></script>
+<script defer src="echarts.min.js?v=5.5.0"></script>
 <link rel="stylesheet" href="chayan.css?v=20260904e">
 </head>
 <body>
@@ -608,9 +609,9 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script src="chayan.js?v=20260904e"></script>
-<script src="daily.js?v=20260826f"></script>
-<script src="warehouse.js?v=20260826f"></script>
+<script defer src="chayan.js?v=20260904e"></script>
+<script defer src="daily.js?v=20260826f"></script>
+<script defer src="warehouse.js?v=20260826f"></script>
 <script>
 // 初始化日期显示
 (function(){
