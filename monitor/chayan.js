@@ -464,29 +464,33 @@ function readExcel(file) {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-        // ====== Preflight: 剔除疑似异常的 sheet（OOM 防护）======
-        // 背景：2026-09-07 OOM 事故——某 xlsx 含 ref=A1:XFD16365 的"空但占位"sheet
-        // （典型：旧模板/被另存为时留下的 dimension ref），SheetJS 解析时为 16384 列
-        // 预生成 helper 数组，单 sheet 直接撑爆 Chrome tab。
-        // 这里只放"健康"的 sheet 继续走流程，避免下面的 SheetNames[0] 兜底选到
-        // 异常 sheet 引发 OOM。健康阈值是保守值，跟踪表一般列<60 行<5000。
-        const MAX_COL = 100;
-        const MAX_ROW = 50000;
-        const healthyNames = workbook.SheetNames.filter(name => {
+        // ====== OOM 防护：仅剔除"全表占位"型异常 sheet（ref 接近 Excel 最大规格）======
+        // 背景：2026-09-07 OOM 事故——某 xlsx 含 ref=A1:XFD16365 的"空但占位"sheet，
+        // SheetJS 解析时为 16384 列预生成 helper 数组，单 sheet 撑爆 Chrome tab。
+        // 关键：阈值必须宽松，绝不能误杀真实的主数据 sheet（跟踪表常 100+ 列）。
+        // 因此只剔 col>10000（接近 XFD 16384 占位 ref）这种明显异常的 sheet，其余原样保留。
+        // 主 sheet 选择严格沿用周五逻辑（find 主名 → [0] 兜底），仅排除异常 sheet。
+        const ABNORMAL_COL = 10000;
+        const isAbnormal = (name) => {
           const ws = workbook.Sheets[name];
           const ref = ws && ws['!ref'];
           if (!ref || ref === 'A1') return false;
           try {
             const r = XLSX.utils.decode_range(ref);
-            return (r.e.c - r.s.c + 1) <= MAX_COL && (r.e.r - r.s.r + 1) <= MAX_ROW;
+            return (r.e.c - r.s.c + 1) > ABNORMAL_COL;
           } catch (e) { return false; }
-        });
-        if (healthyNames.length === 0) {
-          throw new Error('产品跟踪表里没有健康的 sheet（疑似含 ref=A1:XFD16365 的空占位 sheet）。请在 Excel 中删除"看起来空白"的 sheet 后再上传，或另存为 CSV 重试。');
+        };
+        const candidates = workbook.SheetNames.filter(n => !isAbnormal(n));
+        let sheetName = candidates.find(s => s.trim().startsWith('空运+快递+陆运'));
+        if (!sheetName) {
+          sheetName = candidates[0];
+          if (candidates.length > 1) {
+            console.warn('[monitor] 未找到以"空运+快递+陆运"开头的主数据 sheet，已自动选用：' + sheetName + '。如结果异常，请在 Excel 中确认主 sheet 名称后重试。');
+          }
         }
-        // 查找主数据 sheet（名称可能带空格）
-        let sheetName = healthyNames.find(s => s.trim().startsWith('空运+快递+陆运'));
-        if (!sheetName) sheetName = healthyNames[0];
+        if (!sheetName) {
+          throw new Error('产品跟踪表里没有可用的 sheet（所有 sheet 均为异常占位表）。请在 Excel 中删除"看起来空白"的 sheet 后再上传。');
+        }
         const worksheet = workbook.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
         resolve(rows);
