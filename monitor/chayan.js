@@ -20,13 +20,13 @@ const SETTINGS = {
 // 物流跟踪状态提醒节点（按事业部 Word 文档中的 SLA 表）
 // 键：渠道类型；值：节点 -> 阈值(天)。null 表示无阈值（如***或非时段类规则）
 const SLA_RULES = {
-  '美国快递':           { '提取/装柜': 3,  '出口扫描': 7,  '出境': null,'到港': 2,  '清关': 2,  '末端提取': null,'派送': 2 },
-  '美国/欧洲空派专线':  { '提取/装柜': null,'出口扫描': 7,  '出境': null,'到港': 3,  '清关': 6,  '末端提取': 4,  '派送': 4 },
-  '美国/欧洲空派快线':  { '提取/装柜': null,'出口扫描': 4,  '出境': null,'到港': 2,  '清关': 4,  '末端提取': 4,  '派送': 4 },
-  '美国海运美森':       { '提取/装柜': null,'出口扫描': null,'出境': null,'到港': null,'清关': 7,  '末端提取': 7,  '派送': 7 },
-  '美国/其他海运普船':  { '提取/装柜': 7,  '出口扫描': 7,  '出境': null,'到港': null,'清关': 14, '末端提取': 14, '派送': 7 },
-  '铁路（快线）':       { '提取/装柜': null,'出口扫描': 10, '出境': 10, '到港': 15, '清关': 7,  '末端提取': 4,  '派送': 4 },
-  '铁路/陆运（专线）':  { '提取/装柜': null,'出口扫描': 10, '出境': 10, '到港': 15, '清关': 7,  '末端提取': 4,  '派送': 4 }
+  '美国快递':           { '装柜': 3,  '出口扫描': 7,  '出境': null,'到港清关': 2,  '末端提取': null,'派送': 2 },
+  '美国/欧洲空派专线':  { '装柜': null,'出口扫描': 7,  '出境': null,'到港清关': 6,  '末端提取': 4,  '派送': 4 },
+  '美国/欧洲空派快线':  { '装柜': null,'出口扫描': 4,  '出境': null,'到港清关': 4,  '末端提取': 4,  '派送': 4 },
+  '美国海运美森':       { '装柜': null,'出口扫描': null,'出境': null,'到港清关': 7,  '末端提取': 7,  '派送': 7 },
+  '美国/其他海运普船':  { '装柜': 7,  '出口扫描': 7,  '出境': null,'到港清关': 14, '末端提取': 14, '派送': 7 },
+  '铁路（快线）':       { '装柜': null,'出口扫描': 10, '出境': 10, '到港清关': 15, '末端提取': 4,  '派送': 4 },
+  '铁路/陆运（专线）':  { '装柜': null,'出口扫描': 10, '出境': 10, '到港清关': 15, '末端提取': 4,  '派送': 4 }
 };
 
 // 无 SLA 配置的节点（如"等待上火车/等待航班"），按事业部口径走默认天数
@@ -41,42 +41,54 @@ const SAILING_KEYWORDS = ['已开船', '已起航', '已开航', '已离港', '�
 // 从状态备注里提取"已开船/已离港"后的"预计M/D到港"日期（同年）
 const SAILING_ETA_PATTERN = /(?:已开船|已起航|已开航|已离港|航行中|船已开|已起飞|航班已飞|航司已飞|一程已飞|二程已飞|续程已飞|已发车|班列发车|离境)[^\d]*(\d{1,2})[\/.\-月](\d{1,2})\s*(到港|落地|到站|抵达)/;
 
-const STAGNATION_NODES = ['提取/装柜', '出口扫描', '出境', '到港', '清关', '末端提取', '派送'];
+const STAGNATION_NODES = ['装柜', '出口扫描', '出境', '到港清关', '末端提取', '派送'];
 
 // ===== 标准事件字典（event_code 归并，对齐「物流轨迹节点容器设计」）=====
 // 把 6 个日期列 + 状态备注统一归并为有序事件链；状态备注从"脆弱兜底"升级为"带优先级的同源输入"。
 // 事件 code -> 当前所在节点（即下一个等待的 SLA 节点）。null = 已完成(签收)。
-const EVENT_TO_NODE = {
-  extract:   '提取/装柜',   // 仓库出货/装柜完成 -> 等出口扫描
-  carrier_in:'出口扫描',    // 入承运商仓 -> 等离境（v3.1：仅在无装柜事件时作为最新；装柜完成则被取代）
-  depart:    '到港',         // 离港/起飞/发车/离境(DEPARTED) -> 等到港
-  arrive:    '清关',         // 到港/落地/到站(ARRIVED) -> 等清关
-  clearing:  '清关',         // 目的地清关中(进行) -> 等清关完成
-  cleared:   '末端提取',     // 清关完成/查验放行/已提柜 -> 等末端提取
-  pickup:    '派送',         // 已提柜/提取 -> 等派送
-  transit:   '派送',         // 转运中(已上火车/卡车转运) -> 等派送
-  delivering:'派送',         // 派送中 -> 等签收
-  delivered: null           // 已签收 -> 完成
-};
+// 快递派判定：素芸渠道(物流渠道)出现 海派/空派 字样 → 尾端快递派（目的国提货=末端提取）
+function isExpressForwarding(rec) {
+  return /海派|空派/.test(String(rec.logisticChannel || ''));
+}
+
+// 事件 code -> 当前所在节点（即该单当前处于/等待的 SLA 节点）。null = 已完成(签收)
+// 2026-09-08：拆分"提取/装柜"（纯快递提取=装柜起运国；快递派提取=末端提取目的国）；
+//             到港与清关合并为"到港清关"；出境为持久态。
+function getNodeOfEvent(code, rec) {
+  switch (code) {
+    case 'extract':      return '装柜';      // 起运国装柜/交快递(纯快递装柜=已揽收/交快递；已提取归末端提取)
+    case 'carrier_in':   return '出口扫描';   // 入承运商仓
+    case 'export_clear': return '出口扫描';   // 国内/出口报关查验放行(货物尚未出境，≠目的国清关完成)
+    case 'depart':       return '出境';       // 已开船/已飞/班列发车/已出境(离境) -> 出境(持久态)
+    case 'arrive':
+    case 'clearing':     return '到港清关';   // 到港/落地/到站/抵达清关点 + 清关中/目的港查验/国外查验/删单重报
+    case 'cleared':      return isExpressForwarding(rec) ? '末端提取' : '派送'; // 清关完成：快递派→末端提取；其余→派送
+    case 'pickup':       return '末端提取';   // 已提柜/已提取/服务商提货/提货(目的国末端提货) -> 末端提取
+    case 'transit':      return '派送';
+    case 'delivering':   return '派送';       // 预约送仓/派送中 -> 派送
+    case 'delivered':    return null;         // 已签收 -> 完成
+    default:             return null;
+  }
+}
 
 // 事件 code 中文名（用于滞留页展示"最新节点"）
 const EVENT_CN = {
-  extract: '提取/装柜', carrier_in: '入承运商仓', depart: '离港(DEPARTED)',
-  arrive: '到港(ARRIVED)', clearing: '目的地清关中', cleared: '清关完成',
-  pickup: '已提柜/提取', transit: '转运中', delivering: '派送中', delivered: '已签收'
+  extract: '装柜/交快递', carrier_in: '入承运商仓', export_clear: '报关放行(出口查验)', depart: '出境(离港/离境)',
+  arrive: '到港清关(到港/落地/到站)', clearing: '到港清关(目的地查验/清关中)', cleared: '清关完成',
+  pickup: '末端提取(已提货)', transit: '转运中', delivering: '派送中', delivered: '已签收'
 };
 
 // 状态备注行 -> 标准事件 code（v3.1：预测语"预计...到港"先清洗再匹配；arrive 要求"已"前缀实到；查验放行归 cleared）
 const REMARK_EVENT_PATTERNS = [
   { re: /已签收|已送达/,                                  code: 'delivered' },
-  { re: /部分签收|派送中|在派送|已派送/,                  code: 'delivering' },
+  { re: /部分签收|派送中|在派送|已派送|预约送仓|送仓中|送仓预约|已预约.*送仓|安排送仓|送仓/, code: 'delivering' },
   { re: /已上火车|卡车转运|铁路转运|转运中/,              code: 'transit' },
-  { re: /(已提柜|快递已提取|已提取)/,                     code: 'pickup' },
-  { re: /清完关|清关完成|已清关|查验已放行|查验放行|待提取/, code: 'cleared' },
-  { re: /清关中|目的地查验|查验中/,                       code: 'clearing' },
-  { re: /已到港|已抵达|已落地|已到站/,                     code: 'arrive' },
-  { re: /已开船|已离港|船舶已离开|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离境/, code: 'depart' },
-  { re: /国内查验|出口查验|启运地查验|卡审结|装柜|已装柜|入仓|交运|今天装柜/, code: 'extract' }
+  { re: /(已提柜|服务商提货|提货|已提取)/,                code: 'pickup' },
+  { re: /清完关|清关完成|已清关|待提取/,                  code: 'cleared' },
+  { re: /清关中|目的地查验|目的港查验|国外查验|查验中|删单重报/, code: 'clearing' },
+  { re: /已到港|已抵达|已落地|已到站|到港|抵港|落地|到站|到清关点|抵达清关点|到目的监管仓/, code: 'arrive' },
+  { re: /已开船|开船|已离港|船舶已离开|已飞|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离站|离境|已出境|出境/, code: 'depart' },
+  { re: /装柜|已装柜|入仓|交运|今天装柜|已揽收|已交快递|快递上网|已交寄/, code: 'extract' }
 ];
 
 // 各渠道典型航程天数（用于"已离境"票的在途豁免兜底：代理未填预计到港时，按航程推定是否仍在途）
@@ -91,10 +103,10 @@ const TRANSIT_DAYS = {
 // 把"最后一个已发生里程碑"映射到"当前所在节点"（即下一节点的阈值）
 // 入承运商仓/仓库出货都视作已发生 提取/装柜；其下一步等待 出口扫描
 const MILESTONE_TO_NODE = {
-  warehouseOut: '提取/装柜',
+  warehouseOut: '装柜',
   carrierIn: '出口扫描',
-  depart: '到港',         // 跨过 出口扫描/出境，直接等 到港（与"到港"列的阈值匹配）
-  arrive: '清关',         // 跨过 提柜，直接等 末端提取（用 清关 阈值，因提柜未单独记录）
+  depart: '到港清关',     // 跨过 出口扫描/出境，直接等 到港清关
+  arrive: '到港清关',     // 抵港后即清关，归并到 到港清关
   finalPickup: '派送'     // 等待 签收（用 派送 阈值）
 };
 
@@ -107,10 +119,15 @@ function parseRemarkEvents(remark) {
   if (!remark) return [];
   const lines = String(remark).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   const year = new Date().getFullYear();
+  const full = String(remark);
+  // 2026-09-08 二次修正：先扫描全局信号，区分“国内报关查验放行”与“目的国清关完成”。
+  //   已出境/已到港之后出现的查验放行 = 目的国清关；否则（货物尚在国内） = 国内报关放行（节点=出口扫描，非清关完成）。
+  const departed = /已开船|开船|已离港|船舶已离开|已飞|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离站|离境|已出境|出境/.test(full);
+  const arrived  = /已到港|已抵达|已落地|已到站|到港|抵港|落地|到站|到清关点|抵达清关点|到目的监管仓/.test(full);
   const out = [];
   // v3.1 预测语清洗：预计...到港/抵达/落地/到站/到达/放行/装船/开船/起飞/发车/装柜/提柜/查验/装车/离港/离境/派送/签收/清关
-  // 避免"预计9/3到港"被误归为 arrive；保留行首真实事件日期。
-  const predictRe = /预计[^,，\n。]*?(到港|抵达|落地|到站|到达|派送|签收|清关|放行|装船|开船|起飞|发车|装柜|提柜|查验|装车|离港|离境)/g;
+  // 避免“预计9/3到港”被误归为 arrive；保留行首真实事件日期。
+  const predictRe = /(?:预计|延误至|更新预计)[^,，\n。]*?(到港|抵达|落地|到站|到达|派送|签收|清关|放行|装船|开船|起飞|发车|装柜|提柜|查验|装车|离港|离境|出境)/g;
   for (const line of lines) {
     // 取该行第一个日期（状态备注格式 "M/D 节点描述"，行首日期=事件发生日）
     let date = null, m;
@@ -121,8 +138,16 @@ function parseRemarkEvents(remark) {
       if ((m = re.exec(line)) !== null) date = new Date(year, +m[2] - 1, +m[3]);
     }
     if (!date || isNaN(date.getTime())) continue;
-    // 清洗"预计..."子句后做模式匹配，避免预测被误归为已发生事件
+    // 清洗“预计...”子句后做模式匹配，避免预测被误归为已发生事件
     const cleanedLine = line.replace(predictRe, '');
+    // ① 国内/出口查验（报关查验，货物尚未出境）→ 出口报关放行（节点=出口扫描，区别于目的国清关完成）
+    if (/国内查验|出口查验|启运地查验|卡审结/.test(cleanedLine)) { out.push({ code: 'export_clear', date, raw: line }); continue; }
+    // ② 查验放行/清关放行：已出境或已到港后为目的国清关完成；否则为国内报关放行
+    if (/清完关|清关完成|已清关|待提取/.test(cleanedLine)) { out.push({ code: 'cleared', date, raw: line }); continue; }
+    if (/查验已放行|查验放行|清关放行/.test(cleanedLine)) {
+      out.push({ code: (departed || arrived) ? 'cleared' : 'export_clear', date, raw: line });
+      continue;
+    }
     for (const p of REMARK_EVENT_PATTERNS) {
       if (p.re.test(cleanedLine)) { out.push({ code: p.code, date, raw: line }); break; }
     }
@@ -164,14 +189,18 @@ function buildEventChain(rec) {
   if (lastEvent && lastEvent.code === 'delivered') { excluded = true; excludeReason = '已签收'; }
   else if (lastEvent && lastEvent.code === 'depart') {
     const ch = getChannelType(rec);
-    const inTransit = Math.floor((new Date() - lastEvent.date) / 86400000);
-    // v3.1 在途豁免：
-    //  代理填了预计到港 → 以 ETA 为准（ETA 未到才豁免；ETA 已过 = 该到未到 = 真滞留，不豁免）
-    //  代理未填 ETA → 按渠道典型航程 TRANSIT_DAYS 推定（兜底）
-    let inTransitValid;
-    if (eta) inTransitValid = eta >= new Date();
-    else     inTransitValid = inTransit <= (TRANSIT_DAYS[ch] || 10);
-    if (inTransitValid) { excluded = true; excludeReason = '航行中(在途)'; }
+    // 2026-09-08：铁路/陆运/汽运的"出境"是受监控节点(阈值10天)，不可豁免；
+    // 仅海运/空运/快递的离境视为在途豁免（其出境阈值为 null，靠在途放行）。
+    if (!/铁路|陆运/.test(ch || '')) {
+      const inTransit = Math.floor((new Date() - lastEvent.date) / 86400000);
+      // v3.1 在途豁免：
+      //  代理填了预计到港 → 以 ETA 为准（ETA 未到才豁免；ETA 已过 = 该到未到 = 真滞留，不豁免）
+      //  代理未填 ETA → 按渠道典型航程 TRANSIT_DAYS 推定（兜底）
+      let inTransitValid;
+      if (eta) inTransitValid = eta >= new Date();
+      else     inTransitValid = inTransit <= (TRANSIT_DAYS[ch] || 10);
+      if (inTransitValid) { excluded = true; excludeReason = '航行中(在途)'; }
+    }
   }
   return { events: merged, lastEvent, excluded, excludeReason, eta };
 }
@@ -183,23 +212,41 @@ function determineStagnation(rec, nowOverride) {
   if (chain.excluded) return { excluded: true, reason: chain.excludeReason };
   if (!chain.lastEvent) return null;
   const code = chain.lastEvent.code;
-  const currentNode = EVENT_TO_NODE[code];
+  // 2026-09-08：节点由事件 code + 渠道类型(快递派判定) 动态决定
+  const currentNode = getNodeOfEvent(code, rec);
   if (!currentNode) return null;
   const channelType = getChannelType(rec);
-  if (!channelType) return { channelType: null, currentNode, latestDate: chain.lastEvent.date, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型', eventCode: code };
+  // 最新动态日期 = 状态备注「首行」文本日期（首行最新/倒序追加）；首行无日期时退回事件链最后日期
+  const latestDate = extractFirstLineDate(rec.remark) || chain.lastEvent.date;
+  if (!channelType) return { channelType: null, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '未知渠道类型', eventCode: code };
   const rule = SLA_RULES[channelType];
-  if (!rule) return { channelType, currentNode, latestDate: chain.lastEvent.date, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则', eventCode: code };
+  if (!rule) return { channelType, currentNode, latestDate, threshold: null, elapsedDays: 0, stagnant: false, stagnationDays: 0, reason: '无 SLA 规则', eventCode: code };
   let threshold = rule[currentNode];
   let isDefault = false;
   if (threshold == null) { threshold = DEFAULT_STAGNATION_DAYS; isDefault = true; }
   const now = nowOverride || new Date();
-  const elapsedDays = Math.floor((now - chain.lastEvent.date) / 86400000);
+  const elapsedDays = Math.floor((now - latestDate) / 86400000);
   const stagnant = elapsedDays > threshold;
   return {
-    channelType, currentNode, latestDate: chain.lastEvent.date, threshold, isDefault,
+    channelType, currentNode, latestDate, threshold, isDefault,
     elapsedDays, stagnant, stagnationDays: stagnant ? (elapsedDays - threshold) : 0,
     excluded: false, eventCode: code
   };
+}
+
+// 2026-09-08：最新动态日期 = 状态备注「首行」(首行最新/倒序追加) 文本的日期。
+// 不再回退到入承运商仓日期。首行第一个日期即该条最新动态的日期（含"已"=实际、含"预计/延误至/更新预计"=预测，均取首行首个日期）。
+function extractFirstLineDate(remark) {
+  if (!remark) return null;
+  const lines = String(remark).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+  const first = lines[0];
+  const year = new Date().getFullYear();
+  let m, re = /(\d{4})[-./](\d{1,2})[-./](\d{1,2})/;
+  if ((m = re.exec(first)) !== null) return new Date(+m[1], +m[2] - 1, +m[3]);
+  re = /(\d{1,2})[-./月](\d{1,2})(?!\d)/;
+  if ((m = re.exec(first)) !== null) return new Date(year, +m[1] - 1, +m[2]);
+  return null;
 }
 
 // 从状态备注里尝试提取最新动态日期（YYYY-MM-DD 形式返回）。无则 null。
@@ -277,7 +324,7 @@ function getChannelType(rec) {
     if (log.includes('专线')) return '美国/欧洲空派专线';
     return '美国/欧洲空派专线';
   }
-  if (type === '铁路') {
+  if (type === '铁路' || type === '汽运') {
     if (log.includes('快线')) return '铁路（快线）';
     return '铁路/陆运（专线）';
   }
@@ -456,6 +503,33 @@ function buildColMap(rows) {
 
 // ===================== Excel 读取 =====================
 
+// 将 worksheet['!ref'] 收回到"实际有值的 cell 范围"，根治 dimension ref 膨胀导致的 OOM。
+// 背景：2026-09-07 今天上传的 0904/0905 表，主数据 sheet 的 dimension 被 Excel/WPS 错误
+// 写成 A1:XFD16365（占满整个 Excel 规格 16384 列），实际仅 84 列有数据。SheetJS 按膨胀
+// ref 在 sheet_to_json 时遍历 2.68 亿空 cell，撑爆 Chrome tab（Out of Memory）。
+// 这里扫描真实 cell 坐标，把 !ref 改写成实际范围（如 A1:CF16365），后续只遍历真实数据区，
+// 既不出 OOM，也不误剔主表。旧表（ref 本就正常）经此函数不变。
+function clampSheetRef(ws) {
+  if (!ws || !ws['!ref']) return ws;
+  let maxR = 0, maxC = 0;
+  for (const addr in ws) {
+    if (addr.charCodeAt(0) === 33) continue; // 跳过 !ref / !margins 等属性
+    const m = /^([A-Z]+)([0-9]+)$/.exec(addr);
+    if (!m) continue;
+    let c = 0;
+    for (let i = 0; i < m[1].length; i++) c = c * 26 + (m[1].charCodeAt(i) - 64);
+    const r = parseInt(m[2], 10);
+    if (r > maxR) maxR = r;
+    if (c > maxC) maxC = c;
+  }
+  if (maxR > 0 && maxC > 0) {
+    let col = ''; let n = maxC;
+    while (n > 0) { const rem = (n - 1) % 26; col = String.fromCharCode(65 + rem) + col; n = Math.floor((n - 1) / 26); }
+    ws['!ref'] = 'A1:' + col + maxR;
+  }
+  return ws;
+}
+
 function readExcel(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -464,34 +538,11 @@ function readExcel(file) {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-        // ====== OOM 防护：仅剔除"全表占位"型异常 sheet（ref 接近 Excel 最大规格）======
-        // 背景：2026-09-07 OOM 事故——某 xlsx 含 ref=A1:XFD16365 的"空但占位"sheet，
-        // SheetJS 解析时为 16384 列预生成 helper 数组，单 sheet 撑爆 Chrome tab。
-        // 关键：阈值必须宽松，绝不能误杀真实的主数据 sheet（跟踪表常 100+ 列）。
-        // 因此只剔 col>10000（接近 XFD 16384 占位 ref）这种明显异常的 sheet，其余原样保留。
-        // 主 sheet 选择严格沿用周五逻辑（find 主名 → [0] 兜底），仅排除异常 sheet。
-        const ABNORMAL_COL = 10000;
-        const isAbnormal = (name) => {
-          const ws = workbook.Sheets[name];
-          const ref = ws && ws['!ref'];
-          if (!ref || ref === 'A1') return false;
-          try {
-            const r = XLSX.utils.decode_range(ref);
-            return (r.e.c - r.s.c + 1) > ABNORMAL_COL;
-          } catch (e) { return false; }
-        };
-        const candidates = workbook.SheetNames.filter(n => !isAbnormal(n));
-        let sheetName = candidates.find(s => s.trim().startsWith('空运+快递+陆运'));
-        if (!sheetName) {
-          sheetName = candidates[0];
-          if (candidates.length > 1) {
-            console.warn('[monitor] 未找到以"空运+快递+陆运"开头的主数据 sheet，已自动选用：' + sheetName + '。如结果异常，请在 Excel 中确认主 sheet 名称后重试。');
-          }
-        }
-        if (!sheetName) {
-          throw new Error('产品跟踪表里没有可用的 sheet（所有 sheet 均为异常占位表）。请在 Excel 中删除"看起来空白"的 sheet 后再上传。');
-        }
+        // 主数据 sheet 选择：沿用周五逻辑（find 主名 → [0] 兜底），不剔除任何 sheet
+        let sheetName = workbook.SheetNames.find(s => s.trim().startsWith('空运+快递+陆运')) || workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
+        // OOM 根治：裁剪 dimension ref（见 clampSheetRef 注释）
+        clampSheetRef(worksheet);
         const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
         resolve(rows);
       } catch (err) {
