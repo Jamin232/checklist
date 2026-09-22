@@ -70,7 +70,9 @@ def main():
     args = ap.parse_args()
 
     started = datetime.datetime.now()
-    log_lines = ["\n=== %s 开始每日刷新（monitor）===" % started.strftime("%Y-%m-%d %H:%M:%S")]
+    head = "\n=== %s 开始每日刷新（monitor）===" % started.strftime("%Y-%m-%d %H:%M:%S")
+    log_lines = [head]
+    print(head, flush=True)
 
     # 1) 定位 Excel
     excel = args.input or find_latest_excel(args.dir)
@@ -81,12 +83,14 @@ def main():
         _write_run(False, None, log_lines)
         sys.exit(1)
     log_lines.append("[INFO] 使用数据源: %s" % excel)
+    print("[INFO] 使用数据源: %s" % excel, flush=True)
 
     # 2) 调用 build
     cmd = [args.python, BUILD_SCRIPT, "--input", excel, "--output", DATA_JSON]
     _sync_source_snapshot(excel, log_lines)
     log_lines.append("[INFO] 命令: %s" % " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    print("[INFO] 正在解析跟踪表并生成 data.json（约需几秒~1分钟）...", flush=True)
+    proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace")
     for line in (proc.stdout or "").splitlines():
         log_lines.append("[build] " + line)
     if proc.returncode != 0:
@@ -117,7 +121,9 @@ def main():
         "[OK] 记录 %d | 数据基准日 %s | 来源 %s"
         % (len(rows), meta.get("dataDate", "未知"), meta.get("sourceFile", "未知"))
     )
+    print(log_lines[-1], flush=True)
     log_lines.append("=== 完成 ===")
+    print("[INFO] 正在推送站点文件到 GitHub Pages（若首次 ssh 询问 yes/no 请输入 yes）...", flush=True)
     ok = _git_push(log_lines)
     print("\n".join(log_lines[-8:]))
     _write_run(ok, os.path.basename(excel), log_lines,

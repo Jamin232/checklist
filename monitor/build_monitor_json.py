@@ -129,9 +129,22 @@ def build(excel_path, output_path):
 
     records = []
     max_ship = None
+    empty_streak = 0
+    # 关键修复：部分跟踪表被导出工具保存为 1048576 行的整表格式，
+    # 尾部存在上百万空行。若逐行全量写出会生成 GB 级 data.json（曾导致
+    # 2GB / GitHub 拒收）。这里遇「连续 N 行全空」即判定数据区结束并 break。
+    # 真实业务跟踪表不会连续 50 行空白，而尾部空行是百万级，阈值安全。
+    EMPTY_ROW_LIMIT = 50
     for r in rows_iter:
         # 补齐到表头长度
         row = list(r) + [""] * (len(header) - len(r))
+        # 整行判空：所有单元格清洗后均为空（None / ''）
+        if all(clean_cell(c) in ("", None) for c in row):
+            empty_streak += 1
+            if empty_streak >= EMPTY_ROW_LIMIT:
+                break
+            continue
+        empty_streak = 0
         obj = {}
         for i, h in enumerate(header):
             val = row[i] if i < len(row) else ""

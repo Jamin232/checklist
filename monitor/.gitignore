@@ -1,0 +1,8 @@
+# 运行时生成/本地分析产物，勿入版本库
+source/
+last_run.json
+daily_log.txt
+__pycache__/
+chayan_backup_20260721/
+
+# 注意：data.json 必须入库（GitHub Pages 前端 fetch 依赖它），故不在此忽略。
