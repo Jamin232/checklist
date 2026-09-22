@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>物流运营监控</title>
 <!-- 依赖：自托管于本仓库，去除外网 CDN 依赖（避免 jsdelivr 等不可达导致页面挂起） -->
-<!-- 全部加 defer：并行下载、HTML 先解析完、UI 先出来，脚本在 DOM 准备好后按序执行，避免大库阻塞主线程导致"页面无响应" -->
+<!-- 全部加 defer：并行下载、HTML 先解析完、UI 先出来，脚本在 DOM 准备好后按序执行 -->
 <script defer src="xlsx.full.min.js?v=0.20.1"></script>
 <script defer src="echarts.min.js?v=5.5.0"></script>
-<link rel="stylesheet" href="chayan.css?v=20260904e">
+<link rel="stylesheet" href="chayan.css?v=20260922a">
 </head>
 <body>
 <div class="app">
@@ -21,585 +21,478 @@
     <div class="sub-title">在途 · 时效 · 异常 · 查验 · 渠道占比 · 预警</div>
   </div>
 
-  <!-- Tab 导航 -->
-  <div class="tab-bar">
-    <!-- ═══ 日度监控（总览） ═══ -->
-    <div class="tab-btn active" data-tab="d_overview" onclick="switchTab('d_overview')">日度总览</div>
-    <div class="tab-btn" data-tab="d_intransit" onclick="switchTab('d_intransit')">在途</div>
-    <div class="tab-btn" data-tab="d_sla" onclick="switchTab('d_sla')">时效SLA</div>
-    <div class="tab-btn" data-tab="d_abnormal" onclick="switchTab('d_abnormal')">异常</div>
-    <div class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">渠道占比</div>
-    <div class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</div>
-    <div class="tab-sep"></div>
-    <!-- ═══ 仓配监控（独立数据源：仓配每日报表） ═══ -->
-    <div class="tab-btn" data-tab="warehouse" onclick="switchTab('warehouse')">仓配监控</div>
-    <div class="tab-sep"></div>
-    <!-- ═══ 查验监控（明细） ═══ -->
-    <div class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">查验总览</div>
-    <div class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</div>
-    <div class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</div>
-    <div class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</div>
-    <div class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</div>
-    <div class="tab-btn" data-tab="stagnation" onclick="switchTab('stagnation')">🚚 滞留</div>
-    <button class="export-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
-    <button class="export-btn" id="shareBtn" onclick="generateShareLink()" style="display:none">🔗 分享链接</button>
-    <button class="export-btn" id="uploadTrackBtn" onclick="openTrackUpload()">📊 上传跟踪表</button>
-  </div>
+  <div class="layout">
+    <!-- ===== 左侧 PC 导航（日度监控 / 查验监控 分组） ===== -->
+    <aside class="sidebar">
+      <div class="nav-section">日度监控</div>
+      <button class="tab-btn active" data-tab="d_overview" onclick="switchTab('d_overview')">日度总览</button>
+      <button class="tab-btn" data-tab="d_intransit" onclick="switchTab('d_intransit')">在途</button>
+      <button class="tab-btn" data-tab="d_sla" onclick="switchTab('d_sla')">时效SLA</button>
+      <button class="tab-btn" data-tab="d_abnormal" onclick="switchTab('d_abnormal')">异常</button>
+      <button class="tab-btn" data-tab="d_cost" onclick="switchTab('d_cost')">渠道占比</button>
+      <button class="tab-btn" data-tab="d_tomorrow" onclick="switchTab('d_tomorrow')">明日预警</button>
 
-  <!-- 上传面板（全屏覆盖，上传后隐藏） -->
-  <div id="uploadPanel" class="upload-panel">
-    <div class="upload-card">
-      <div class="upload-icon">📊</div>
-      <div class="upload-title">上传产品跟踪表</div>
-      <div class="upload-desc">请上传 <b>产品跟踪表</b>（xlsx格式）<br>可一次多选 <b>今日 + 昨日</b> 两份，<b>文件名含日期将自动区分</b>（如 0720、2026-07-20）<br>支持拖拽或点击选择</div>
-      <div class="upload-zone" id="dropZone">
-        <div>📁 点击或拖拽文件到此处</div>
-        <div class="upload-hint">仅支持 .xlsx 格式</div>
+      <div class="nav-sep"></div>
+      <div class="nav-section">查验监控</div>
+      <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">查验总览</button>
+      <button class="tab-btn" data-tab="channel" onclick="switchTab('channel')">渠道</button>
+      <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">代理</button>
+      <button class="tab-btn" data-tab="drilldown" onclick="switchTab('drilldown')">下钻</button>
+      <button class="tab-btn" data-tab="alert" onclick="switchTab('alert')">预警</button>
+      <button class="tab-btn" data-tab="stagnation" onclick="switchTab('stagnation')">🚚 滞留</button>
+
+      <div class="sidebar-actions">
+        <button class="sidebar-btn" onclick="loadFromServer()">🔄 重新加载</button>
+        <button class="sidebar-btn" id="exportBtn" onclick="exportToExcel()">📥 导出</button>
+        <button class="sidebar-btn" id="shareBtn" onclick="generateShareLink()" style="display:none">🔗 分享链接</button>
       </div>
-      <input type="file" id="fileInput" accept=".xlsx" multiple style="display:none">
-      <div class="upload-note">
-        <b>统计口径：</b>以发货日(T列)为基准，票数按分出仓单号换行分割，重复单号自动去重。<br>
-        查验判定以状态备注为金标准（含"国内查验"/"国外查验"）；<br>
-        若备注未标记但"国内查验时间"/"目的地查验时间"列有值，仍视为对应查验（补充判定）。<br>
-        起运港查验反映即时风险，目的港查验作为总体参考（存在滞后）。<br>
-        周度统计按<b>中国日历周</b>划分：<b>周一为一周起点，周日为终点</b>（周 key 中括号内为当周周一日期，如 2026-W28 (07/13)）。
-      </div>
-      <div class="upload-warehouse-entry">
-        <span>暂无产品跟踪表，只想看仓配发运？</span>
-        <button class="export-btn" id="enterWarehouseBtn" onclick="enterWarehouseOnly()">📦 仅查看仓配监控 →</button>
-      </div>
-    </div>
-  </div>
+    </aside>
 
-  <!-- 主内容区（上传后显示） -->
-  <div id="mainContent" style="display:none">
+    <!-- ===== 主内容区 ===== -->
+    <main class="main">
+      <div id="mainContent">
 
-    <!-- ===== 总览（查验） ===== -->
-    <div id="pane-dashboard" class="tab-pane">
-      <!-- KPI 卡片 -->
-      <div class="kpi-row">
-        <div class="kpi-card">
-          <div class="kpi-num" id="kpiTotal">--</div>
-          <div class="kpi-label">总发货票数</div>
-        </div>
-        <div class="kpi-card kpi-domestic">
-          <div class="kpi-num" id="kpiDomestic">--</div>
-          <div class="kpi-label">起运港查验率</div>
-        </div>
-        <div class="kpi-card kpi-foreign">
-          <div class="kpi-num" id="kpiForeign">--</div>
-          <div class="kpi-label">目的港查验率</div>
-        </div>
-        <div class="kpi-card kpi-overall">
-          <div class="kpi-num" id="kpiOverall">--</div>
-          <div class="kpi-label">综合查验率</div>
-        </div>
-      </div>
-
-      <!-- 上周 KPI -->
-      <div class="kpi-row kpi-row-week">
-        <div class="kpi-card kpi-week">
-          <div class="kpi-num" id="kpiWeekRate">--</div>
-          <div class="kpi-label">上周综合查验率</div>
-        </div>
-        <div class="kpi-card kpi-week">
-          <div class="kpi-num" id="kpiWeekTotal">--</div>
-          <div class="kpi-label">上周发货票数</div>
-        </div>
-      </div>
-
-      <!-- 粒度切换 -->
-      <div class="granularity-bar">
-        <span class="granularity-btn active" data-granularity="week">周度</span>
-        <span class="granularity-btn" data-granularity="month">月度</span>
-      </div>
-
-      <!-- 趋势图 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📈 总体查验率趋势</div>
-        </div>
-        <div class="chart-container" id="trendChart"></div>
-      </div>
-
-      <!-- 渠道趋势图 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🏭 渠道查验率趋势</div>
-        </div>
-        <div class="channel-filter-bar">
-          <div class="metric-toggle">
-            <span class="metric-btn active" data-metric="overall" onclick="setChannelMetric('overall')">综合</span>
-            <span class="metric-btn" data-metric="domestic" onclick="setChannelMetric('domestic')">起运港</span>
-            <span class="metric-btn" data-metric="foreign" onclick="setChannelMetric('foreign')">目的港</span>
-          </div>
-          <div class="channel-tags" id="channelTags"></div>
-        </div>
-        <div class="chart-container" id="channelTrendChart"></div>
-      </div>
-    </div>
-
-    <!-- ===== 渠道分析 ===== -->
-    <div id="pane-channel" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🏭 渠道大类查验率 Top20</div>
-        </div>
-        <div class="chart-container" id="channelChart"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🚢 美国海运子渠道</div>
-        </div>
-        <div class="chart-container" id="usSubChart"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📊 渠道大类周期对比（上上周 → 上周）</div>
-          <span class="section-note">起运港即期查验率（目的港滞后，综合不可比）</span>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table compare-table">
-            <thead><tr><th>渠道大类</th><th>上周票数</th><th>上周起运港</th><th>上上周起运港</th><th>变化</th></tr></thead>
-            <tbody id="channelCompareBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📋 素芸物流渠道明细</div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table" id="channelTable"></table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 代理分析 ===== -->
-    <div id="pane-agent" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🏢 代理查验率 Top20</div>
-        </div>
-        <div class="chart-container" id="agentChart"></div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📋 代理绩效对比 <span style="font-size:11px;color:#888;font-weight:400">货量 + 国内查验 + 上上周→上周</span></div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table compare-table">
-            <thead><tr><th>代理</th><th>总票数<br><span style="font-size:10px;color:#888">总占比</span></th><th>上周票数<br><span style="font-size:10px;color:#888">上周占比</span></th><th>总体国内</th><th>总体国外</th><th>总体综合</th><th>上上周国内</th><th>上周国内</th><th>变化</th><th>建议</th></tr></thead>
-            <tbody id="agentCompareBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🔥 代理 × 渠道热力图</div>
-        </div>
-        <div class="heatmap-tip">
-          💡 横轴=渠道大类，纵轴=代理，颜色越深=查验率越高。<br>
-          找出你的代理在哪些渠道上表现特别差（深红格），这些是你要规避的组合。
-        </div>
-        <div class="chart-container" id="agentChannelHeatmap" style="height:480px"></div>
-      </div>
-    </div>
-
-    <!-- ===== 渠道下钻 ===== -->
-    <div id="pane-drilldown" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🔍 渠道下钻 — 选择渠道大类看代理表现</div>
-        </div>
-        <div class="drilldown-bar">
-          <label>渠道大类：</label>
-          <select id="drilldownSelect" onchange="updateDrilldownTab()">
-            <option value="">— 请选择 —</option>
-          </select>
-          <span class="drilldown-hint">选择后显示该渠道下各代理的查验率与货量分配建议</span>
-        </div>
-      </div>
-      <div class="section" id="drilldownResult" style="display:none">
-        <div class="section-header">
-          <div class="section-title" id="drilldownTitle">上周渠道代理明细</div>
-        </div>
-        <div class="chart-container" id="drilldownChart"></div>
-
-        <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title" id="drilldownTrendTitle">📈 代理起运港查验率周趋势</div>
-        </div>
-        <div class="agent-filter" id="drilldownAgentFilter"></div>
-        <div class="chart-container" id="drilldownTrendChart"></div>
-
-        <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title">📋 上周渠道代理明细</div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table compare-table">
-            <thead><tr><th>代理</th><th>上周票数</th><th>上周票数占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周重量占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周起运港</th><th>上上周起运港</th><th>变化</th><th>建议</th></tr></thead>
-            <tbody id="drilldownTableBody"></tbody>
-          </table>
-        </div>
-
-        <div class="section-header" style="border-top:0.5px solid #f0f0f0">
-          <div class="section-title">📅 月度各家代理查验率（按指标分表）</div>
-        </div>
-        <div class="monthly-tip">行=代理（按该渠道总票数降序，过滤票数&lt;10 的噪点），列=月份。可左右滚动查看历史月份。三张表分别看起运港 / 目的港 / 综合，互不挤占。</div>
-
-        <div class="monthly-sub">
-          <div class="monthly-sub-title">🚢 起运港查验率（月度）</div>
-          <div class="table-wrap" style="max-height:480px">
-            <table class="data-table monthly-grid">
-              <thead id="mDomHead"></thead>
-              <tbody id="mDomBody"></tbody>
-            </table>
+        <!-- 自动加载失败提示 + 单文件应急上传 -->
+        <div id="loadError" class="load-error" style="display:none">
+          <div class="load-error-inner">
+            <div class="load-error-title">⚠️ 无法自动加载 data.json</div>
+            <div class="load-error-msg" id="loadErrorMsg"></div>
+            <div class="load-error-hint">
+              请确认每日脚本已生成 data.json，或在下方选择最新《产品跟踪表》xlsx 应急加载（单文件，无昨日对比）：
+              <input type="file" id="fallbackFileInput" accept=".xlsx">
+            </div>
           </div>
         </div>
 
-        <div class="monthly-sub">
-          <div class="monthly-sub-title">🛬 目的港查验率（月度）</div>
-          <div class="table-wrap" style="max-height:480px">
-            <table class="data-table monthly-grid">
-              <thead id="mForHead"></thead>
-              <tbody id="mForBody"></tbody>
-            </table>
+        <!-- ===== 总览（查验） ===== -->
+        <div id="pane-dashboard" class="tab-pane">
+          <div class="kpi-row">
+            <div class="kpi-card">
+              <div class="kpi-num" id="kpiTotal">--</div>
+              <div class="kpi-label">总发货票数</div>
+            </div>
+            <div class="kpi-card kpi-domestic">
+              <div class="kpi-num" id="kpiDomestic">--</div>
+              <div class="kpi-label">起运港查验率</div>
+            </div>
+            <div class="kpi-card kpi-foreign">
+              <div class="kpi-num" id="kpiForeign">--</div>
+              <div class="kpi-label">目的港查验率</div>
+            </div>
+            <div class="kpi-card kpi-overall">
+              <div class="kpi-num" id="kpiOverall">--</div>
+              <div class="kpi-label">综合查验率</div>
+            </div>
           </div>
-        </div>
 
-        <div class="monthly-sub">
-          <div class="monthly-sub-title">📊 综合查验率（月度，起运港+目的港）</div>
-          <div class="table-wrap" style="max-height:480px">
-            <table class="data-table monthly-grid">
-              <thead id="mAllHead"></thead>
-              <tbody id="mAllBody"></tbody>
-            </table>
+          <div class="kpi-row kpi-row-week">
+            <div class="kpi-card kpi-week">
+              <div class="kpi-num" id="kpiWeekRate">--</div>
+              <div class="kpi-label">上周综合查验率</div>
+            </div>
+            <div class="kpi-card kpi-week">
+              <div class="kpi-num" id="kpiWeekTotal">--</div>
+              <div class="kpi-label">上周发货票数</div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- ===== 预警与明细 ===== -->
-    <div id="pane-alert" class="tab-pane">
-      <!-- 阈值设置 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">⚠️ 预警阈值设置</div>
-        </div>
-        <div class="threshold-row">
-          <label>高风险阈值：<input type="number" id="highRiskInput" class="threshold-input" step="0.1">%</label>
-          <label>中风险阈值：<input type="number" id="midRiskInput" class="threshold-input" step="0.1">%</label>
-          <label>月份：<select id="alertMonthSelect" class="threshold-input"></select></label>
-          <label>口径：
-            <select id="alertPortSelect" class="threshold-input">
-              <option value="overall">综合</option>
-              <option value="domestic">起运港</option>
-              <option value="foreign">目的港</option>
-            </select>
-          </label>
-        </div>
-      </div>
+          <div class="granularity-bar">
+            <span class="granularity-btn active" data-granularity="week">周度</span>
+            <span class="granularity-btn" data-granularity="month">月度</span>
+          </div>
 
-      <!-- 预警列表 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🚨 风险预警列表</div>
-          <span class="section-note" id="alertNote">当前筛选：全部月份 · 综合</span>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table alert-table">
-            <thead><tr><th>级别</th><th>类别</th><th>名称</th><th>查验率</th><th>票数/变化</th></tr></thead>
-            <tbody id="alertTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- 产品属性 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📦 产品属性查验率</div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table" id="productTable"></table>
-        </div>
-      </div>
-
-      <!-- 客户 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">👤 客户查验率</div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table" id="customerTable"></table>
-        </div>
-      </div>
-
-      <!-- 明细搜索 -->
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🔍 订单明细</div>
-          <input type="text" id="detailSearch" class="search-input" placeholder="搜索单号/代理/渠道/国家...">
-        </div>
-        <div class="table-wrap" style="max-height:400px;overflow:auto">
-          <table class="data-table detail-table">
-            <thead><tr><th>单号</th><th>发货日期</th><th>国家</th><th>类型</th><th>渠道</th><th>代理</th><th>素芸渠道</th><th>查验状态</th></tr></thead>
-            <tbody id="detailTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 滞留预警 ===== -->
-    <div id="pane-stagnation" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🚚 滞留预警（按事业部 SLA 节点阈值）</div>
-          <span class="section-note" id="stagnationNote">基于里程碑日期 vs 当前时间，超阈值即视为滞留</span>
-        </div>
-        <div class="threshold-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-          <label>渠道大类：<select id="stagChannelSelect" class="threshold-input" style="width:140px"></select></label>
-          <label>素芸渠道：<select id="stagLogisticSelect" class="threshold-input" style="width:160px"></select></label>
-          <label>代理：<select id="stagAgentSelect" class="threshold-input" style="width:120px"></select></label>
-          <label>客户/事业部：<select id="stagCustomerSelect" class="threshold-input" style="width:140px"></select></label>
-          <label>当前节点：<select id="stagNodeSelect" class="threshold-input" style="width:120px"></select></label>
-          <label>仅看 ≥<input type="number" id="stagMinDays" class="threshold-input" min="0" value="0" style="width:50px">天</label>
-        </div>
-      </div>
-
-      <div class="kpi-row">
-        <div class="kpi-card kpi-domestic">
-          <div class="kpi-num" id="stagTotal">--</div>
-          <div class="kpi-label">滞留票数</div>
-        </div>
-        <div class="kpi-card kpi-foreign">
-          <div class="kpi-num" id="stagHigh">--</div>
-          <div class="kpi-label">高滞留(≥3天)票数</div>
-        </div>
-        <div class="kpi-card kpi-overall">
-          <div class="kpi-num" id="stagAgents">--</div>
-          <div class="kpi-label">涉及代理</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-num" id="stagCustomers">--</div>
-          <div class="kpi-label">涉及客户/事业部</div>
-        </div>
-        <div class="kpi-card kpi-excluded" title="理赔/已结案 + 航行未到 ETA，自动跳过">
-          <div class="kpi-num" id="stagExcluded">--</div>
-          <div class="kpi-label">已排除（理赔 <span id="stagExcludedClaim">0</span> + 航行 <span id="stagExcludedSailing">0</span>）</div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">滞留订单明细（按滞留天数降序）</div>
-        </div>
-        <div id="stagExcludedNote" class="excluded-note" style="font-size:12px;color:var(--text-secondary);padding:4px 0 8px 2px"></div>
-        <div class="table-wrap" style="max-height:600px;overflow:auto">
-          <table class="data-table stagnation-table">
-            <thead><tr><th>单号</th><th>国家·类型</th><th>素芸渠道</th><th>代理</th><th>客户/事业部</th><th>最新节点</th><th>最新动态日期</th><th>已停留</th><th>阈值</th><th>滞留</th><th>状态备注</th></tr></thead>
-            <tbody id="stagnationTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 日度监控：总览 ===== -->
-    <div id="pane-d_overview" class="tab-pane">
-      <div class="kpi-row" id="ov-cards"></div>
-      <div id="ov-extra"></div>
-    </div>
-
-    <!-- ===== 日度监控：在途概览 ===== -->
-    <div id="pane-d_intransit" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">🚢 在途运输方式构成</div>
-          <span class="section-note" id="it-summary"></span>
-        </div>
-        <div class="chart-container" id="it-transitChart"></div>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">🏭 在途 · 按素芸物流渠道</div></div>
-        <div class="table-wrap"><table class="data-table" id="it-channelBody"></table></div>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">🏢 在途 · 按代理</div></div>
-        <div class="table-wrap"><table class="data-table" id="it-agentBody"></table></div>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">👤 在途 · 按客户</div></div>
-        <div class="table-wrap"><table class="data-table" id="it-custBody"></table></div>
-      </div>
-    </div>
-
-    <!-- ===== 日度监控：时效 SLA ===== -->
-    <div id="pane-d_sla" class="tab-pane">
-      <div class="sla-period-bar">
-        <span class="sla-note-label">数据范围：</span>
-        <span class="sla-period-btn active" data-period="all" onclick="Daily.setSlaPeriod('all')">全量</span>
-        <span class="sla-period-btn" data-period="halfmonth" onclick="Daily.setSlaPeriod('halfmonth')">近半月</span>
-        <span class="sla-period-btn" data-period="month" onclick="Daily.setSlaPeriod('month')">近一月</span>
-        <span class="sla-period-btn" data-period="twomonth" onclick="Daily.setSlaPeriod('twomonth')">近两月</span>
-      </div>
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">⏱️ 各渠道大类时效 SLA（已签收单，剔除异常）</div>
-          <span class="section-note">平均实际时效 = 签收−仓库出货；建议时效 = P95（95%正常单可达成）；参考时效 = Z列原值</span>
-        </div>
-        <div class="chart-container" id="sla-chart"></div>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">📋 渠道 SLA 明细</div></div>
-        <div class="table-wrap"><table class="data-table" id="sla-table"></table></div>
-      </div>
-    </div>
-
-    <!-- ===== 日度监控：异常监控 ===== -->
-    <div id="pane-d_abnormal" class="tab-pane">
-      <div id="ab-cards"></div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">📋 异常单明细（查验中/开查中/索赔中/赔付中）</div></div>
-        <div class="table-wrap" style="max-height:420px;overflow:auto">
-          <div id="ab-table"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== 日度监控：渠道占比 ===== -->
-    <div id="pane-d_cost" class="tab-pane">
-      <div class="cost-bar">
-        <span class="cost-dim-btn active" data-dim="week" onclick="Daily.setCostDim('week')">周</span>
-        <span class="cost-dim-btn" data-dim="month" onclick="Daily.setCostDim('month')">月</span>
-        <span class="cost-dim-btn" data-dim="customer" onclick="Daily.setCostDim('customer')">客户(事业部)</span>
-        <span class="cost-sep"></span>
-        <span class="cost-metric-btn active" data-metric="tickets" onclick="Daily.setCostMetric('tickets')">票数</span>
-        <span class="cost-metric-btn" data-metric="weight" onclick="Daily.setCostMetric('weight')">吨数</span>
-        <span class="cost-metric-btn" data-metric="volume" onclick="Daily.setCostMetric('volume')">方数</span>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">🥧 渠道结构占比</div></div>
-        <div class="chart-container" id="cost-chart"></div>
-        <div id="cost-note" class="ov-note"></div>
-      </div>
-      <div class="section">
-        <div class="section-header"><div class="section-title">📊 维度 × 渠道 占比</div></div>
-        <div class="table-wrap"><table class="data-table" id="cost-table"></table></div>
-      </div>
-    </div>
-
-    <!-- ===== 日度监控：明日预警 ===== -->
-    <div id="pane-d_tomorrow" class="tab-pane">
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">⏰ 时效超期预警（在途未妥投，按超期梯度）</div>
-          <span class="section-note">超过 5 / 7 / 10 天仍未妥投的订单</span>
-        </div>
-        <div id="tm-overdue"></div>
-      </div>
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">📅 明日到港 / 清关 / 派送 预警</div>
-          <span class="section-note">解析状态备注里程碑日期，==次日则预警；单票多里程碑以<b>最新(日期最大)</b>里程碑为核心</span>
-        </div>
-        <div id="tm-mile"></div>
-      </div>
-    </div>
-
-    <!-- ===== 仓配监控（独立数据源：仓配每日报表） ===== -->
-    <div id="pane-warehouse" class="tab-pane">
-      <!-- 上传区（无数据时显示） -->
-      <div id="whUploadZone" class="wh-upload-zone">
-        <div class="upload-icon">📦</div>
-        <div class="upload-title">上传仓配每日报表</div>
-        <div class="upload-desc">导入 <b>仓配每日报表（仓库+物流数据）.xlsx</b><br>按月份分 sheet，自动解析 来货 / 入库 / 调拨 / 装箱 / 交运 全流程指标<br>与「产品跟踪表」相互独立，可单独上传</div>
-        <div class="upload-zone wh-dropzone" id="whDropZone">
-          <div>📁 点击或拖拽文件到此处</div>
-          <div class="upload-hint">仅支持 .xlsx 格式</div>
-        </div>
-        <input type="file" id="whFileInput" accept=".xlsx" style="display:none">
-      </div>
-
-      <!-- 看板（有数据时显示） -->
-      <div id="whDashboard" class="hidden">
-        <div class="wh-toolbar">
-          <label>月份：<select id="whMonthSelect"></select></label>
-          <label>仓库视角：
-            <select id="whWarehouseSelect"><option value="combined">两仓合计</option></select>
-          </label>
-          <button class="export-btn" id="whExportBtn">📥 导出结论</button>
-        </div>
-
-        <div class="section conclusions">
-          <div class="section-header"><div class="section-title">📊 自动分析结论 <span class="tag" id="conclusionTag"></span></div></div>
-          <div id="conclusionText"></div>
-        </div>
-
-        <div class="section">
-          <div class="section-header"><div class="section-title">供应链流程漏斗（最新日）</div></div>
-          <div class="flow" id="flowBox"></div>
-          <div class="small" id="flowNote"></div>
-        </div>
-
-        <div class="section">
-          <div class="section-header"><div class="section-title">关键指标 <span class="tag">红色 = 异常信号</span></div></div>
-          <div class="kpis" id="kpiBox"></div>
-        </div>
-
-        <div class="grid2">
           <div class="section">
-            <div class="section-header"><div class="section-title">未交运 / 未入库 / 调拨未完成 趋势</div></div>
-            <div class="chart-container" id="c_backlog"></div>
+            <div class="section-header">
+              <div class="section-title">📈 总体查验率趋势</div>
+            </div>
+            <div class="chart-container" id="trendChart"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🏭 渠道查验率趋势</div>
+            </div>
+            <div class="channel-filter-bar">
+              <div class="metric-toggle">
+                <span class="metric-btn active" data-metric="overall" onclick="setChannelMetric('overall')">综合</span>
+                <span class="metric-btn" data-metric="domestic" onclick="setChannelMetric('domestic')">起运港</span>
+                <span class="metric-btn" data-metric="foreign" onclick="setChannelMetric('foreign')">目的港</span>
+              </div>
+              <div class="channel-tags" id="channelTags"></div>
+            </div>
+            <div class="chart-container" id="channelTrendChart"></div>
+          </div>
+        </div>
+
+        <!-- ===== 渠道分析 ===== -->
+        <div id="pane-channel" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🏭 渠道大类查验率 Top20</div>
+            </div>
+            <div class="chart-container" id="channelChart"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🚢 美国海运子渠道</div>
+            </div>
+            <div class="chart-container" id="usSubChart"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">📊 渠道大类周期对比（上上周 → 上周）</div>
+              <span class="section-note">起运港即期查验率（目的港滞后，综合不可比）</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compare-table">
+                <thead><tr><th>渠道大类</th><th>上周票数</th><th>上周起运港</th><th>上上周起运港</th><th>变化</th></tr></thead>
+                <tbody id="channelCompareBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">📋 素芸物流渠道明细</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="channelTable"></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 代理分析 ===== -->
+        <div id="pane-agent" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🏢 代理查验率 Top20</div>
+            </div>
+            <div class="chart-container" id="agentChart"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">📋 代理绩效对比 <span style="font-size:11px;color:#888;font-weight:400">货量 + 国内查验 + 上上周→上周</span></div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compare-table">
+                <thead><tr><th>代理</th><th>总票数<br><span style="font-size:10px;color:#888">总占比</span></th><th>上周票数<br><span style="font-size:10px;color:#888">上周占比</span></th><th>总体国内</th><th>总体国外</th><th>总体综合</th><th>上上周国内</th><th>上周国内</th><th>变化</th><th>建议</th></tr></thead>
+                <tbody id="agentCompareBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🔥 代理 × 渠道热力图</div>
+            </div>
+            <div class="heatmap-tip">
+              💡 横轴=渠道大类，纵轴=代理，颜色越深=查验率越高。<br>
+              找出你的代理在哪些渠道上表现特别差（深红格），这些是你要规避的组合。
+            </div>
+            <div class="chart-container" id="agentChannelHeatmap" style="height:480px"></div>
+          </div>
+        </div>
+
+        <!-- ===== 渠道下钻 ===== -->
+        <div id="pane-drilldown" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🔍 渠道下钻 — 选择渠道大类看代理表现</div>
+            </div>
+            <div class="drilldown-bar">
+              <label>渠道大类：</label>
+              <select id="drilldownSelect" onchange="updateDrilldownTab()">
+                <option value="">— 请选择 —</option>
+              </select>
+              <span class="drilldown-hint">选择后显示该渠道下各代理的查验率与货量分配建议</span>
+            </div>
+          </div>
+          <div class="section" id="drilldownResult" style="display:none">
+            <div class="section-header">
+              <div class="section-title" id="drilldownTitle">上周渠道代理明细</div>
+            </div>
+            <div class="chart-container" id="drilldownChart"></div>
+
+            <div class="section-header" style="border-top:0.5px solid #f0f0f0">
+              <div class="section-title" id="drilldownTrendTitle">📈 代理起运港查验率周趋势</div>
+            </div>
+            <div class="agent-filter" id="drilldownAgentFilter"></div>
+            <div class="chart-container" id="drilldownTrendChart"></div>
+
+            <div class="section-header" style="border-top:0.5px solid #f0f0f0">
+              <div class="section-title">📋 上周渠道代理明细</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compare-table">
+                <thead><tr><th>代理</th><th>上周票数</th><th>上周票数占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周重量占比<br><span style="font-size:10px;color:#888">渠道内占比</span></th><th>上周起运港</th><th>上上周起运港</th><th>变化</th><th>建议</th></tr></thead>
+                <tbody id="drilldownTableBody"></tbody>
+              </table>
+            </div>
+
+            <div class="section-header" style="border-top:0.5px solid #f0f0f0">
+              <div class="section-title">📅 月度各家代理查验率（按指标分表）</div>
+            </div>
+            <div class="monthly-tip">行=代理（按该渠道总票数降序，过滤票数&lt;10 的噪点），列=月份。可左右滚动查看历史月份。三张表分别看起运港 / 目的港 / 综合，互不挤占。</div>
+
+            <div class="monthly-sub">
+              <div class="monthly-sub-title">🚢 起运港查验率（月度）</div>
+              <div class="table-wrap" style="max-height:480px">
+                <table class="data-table monthly-grid">
+                  <thead id="mDomHead"></thead>
+                  <tbody id="mDomBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="monthly-sub">
+              <div class="monthly-sub-title">🛬 目的港查验率（月度）</div>
+              <div class="table-wrap" style="max-height:480px">
+                <table class="data-table monthly-grid">
+                  <thead id="mForHead"></thead>
+                  <tbody id="mForBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="monthly-sub">
+              <div class="monthly-sub-title">📊 综合查验率（月度，起运港+目的港）</div>
+              <div class="table-wrap" style="max-height:480px">
+                <table class="data-table monthly-grid">
+                  <thead id="mAllHead"></thead>
+                  <tbody id="mAllBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 预警与明细 ===== -->
+        <div id="pane-alert" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">⚠️ 预警阈值设置</div>
+            </div>
+            <div class="threshold-row">
+              <label>高风险阈值：<input type="number" id="highRiskInput" class="threshold-input" step="0.1">%</label>
+              <label>中风险阈值：<input type="number" id="midRiskInput" class="threshold-input" step="0.1">%</label>
+              <label>月份：<select id="alertMonthSelect" class="threshold-input"></select></label>
+              <label>口径：
+                <select id="alertPortSelect" class="threshold-input">
+                  <option value="overall">综合</option>
+                  <option value="domestic">起运港</option>
+                  <option value="foreign">目的港</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🚨 风险预警列表</div>
+              <span class="section-note" id="alertNote">当前筛选：全部月份 · 综合</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table alert-table">
+                <thead><tr><th>级别</th><th>类别</th><th>名称</th><th>查验率</th><th>票数/变化</th></tr></thead>
+                <tbody id="alertTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">📦 产品属性查验率</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="productTable"></table>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">👤 客户查验率</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="customerTable"></table>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🔍 订单明细</div>
+              <input type="text" id="detailSearch" class="search-input" placeholder="搜索单号/代理/渠道/国家...">
+            </div>
+            <div class="table-wrap" style="max-height:400px;overflow:auto">
+              <table class="data-table detail-table">
+                <thead><tr><th>单号</th><th>发货日期</th><th>国家</th><th>类型</th><th>渠道</th><th>代理</th><th>素芸渠道</th><th>查验状态</th></tr></thead>
+                <tbody id="detailTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 滞留预警 ===== -->
+        <div id="pane-stagnation" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🚚 滞留预警（按事业部 SLA 节点阈值）</div>
+              <span class="section-note" id="stagnationNote">基于里程碑日期 vs 当前时间，超阈值即视为滞留</span>
+            </div>
+            <div class="threshold-row" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+              <label>渠道大类：<select id="stagChannelSelect" class="threshold-input" style="width:140px"></select></label>
+              <label>素芸渠道：<select id="stagLogisticSelect" class="threshold-input" style="width:160px"></select></label>
+              <label>代理：<select id="stagAgentSelect" class="threshold-input" style="width:120px"></select></label>
+              <label>客户/事业部：<select id="stagCustomerSelect" class="threshold-input" style="width:140px"></select></label>
+              <label>当前节点：<select id="stagNodeSelect" class="threshold-input" style="width:120px"></select></label>
+              <label>仅看 ≥<input type="number" id="stagMinDays" class="threshold-input" min="0" value="0" style="width:50px">天</label>
+            </div>
+          </div>
+
+          <div class="kpi-row">
+            <div class="kpi-card kpi-domestic">
+              <div class="kpi-num" id="stagTotal">--</div>
+              <div class="kpi-label">滞留票数</div>
+            </div>
+            <div class="kpi-card kpi-foreign">
+              <div class="kpi-num" id="stagHigh">--</div>
+              <div class="kpi-label">高滞留(≥3天)票数</div>
+            </div>
+            <div class="kpi-card kpi-overall">
+              <div class="kpi-num" id="stagAgents">--</div>
+              <div class="kpi-label">涉及代理</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-num" id="stagCustomers">--</div>
+              <div class="kpi-label">涉及客户/事业部</div>
+            </div>
+            <div class="kpi-card kpi-excluded" title="理赔/已结案 + 航行未到 ETA，自动跳过">
+              <div class="kpi-num" id="stagExcluded">--</div>
+              <div class="kpi-label">已排除（理赔 <span id="stagExcludedClaim">0</span> + 航行 <span id="stagExcludedSailing">0</span>）</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">滞留订单明细（按滞留天数降序）</div>
+            </div>
+            <div id="stagExcludedNote" class="excluded-note" style="font-size:12px;color:var(--text-secondary);padding:4px 0 8px 2px"></div>
+            <div class="table-wrap" style="max-height:600px;overflow:auto">
+              <table class="data-table stagnation-table">
+                <thead><tr><th>单号</th><th>国家·类型</th><th>素芸渠道</th><th>代理</th><th>客户/事业部</th><th>最新节点</th><th>最新动态日期</th><th>已停留</th><th>阈值</th><th>滞留</th><th>状态备注</th></tr></thead>
+                <tbody id="stagnationTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 日度监控：总览 ===== -->
+        <div id="pane-d_overview" class="tab-pane">
+          <div class="kpi-row" id="ov-cards"></div>
+          <div id="ov-extra"></div>
+        </div>
+
+        <!-- ===== 日度监控：在途概览 ===== -->
+        <div id="pane-d_intransit" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">🚢 在途运输方式构成</div>
+              <span class="section-note" id="it-summary"></span>
+            </div>
+            <div class="chart-container" id="it-transitChart"></div>
           </div>
           <div class="section">
-            <div class="section-header"><div class="section-title">当日交运 vs 当日未交运</div></div>
-            <div class="chart-container" id="c_ship"></div>
-          </div>
-        </div>
-
-        <div class="grid2">
-          <div class="section">
-            <div class="section-header"><div class="section-title">入库 → 装箱 → 交运 产出趋势</div></div>
-            <div class="chart-container" id="c_throughput"></div>
+            <div class="section-header"><div class="section-title">🏭 在途 · 按素芸物流渠道</div></div>
+            <div class="table-wrap"><table class="data-table" id="it-channelBody"></table></div>
           </div>
           <div class="section">
-            <div class="section-header"><div class="section-title">截单未完成装箱（按渠道）</div></div>
-            <div class="chart-container" id="c_cutoff"></div>
+            <div class="section-header"><div class="section-title">🏢 在途 · 按代理</div></div>
+            <div class="table-wrap"><table class="data-table" id="it-agentBody"></table></div>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">👤 在途 · 按客户</div></div>
+            <div class="table-wrap"><table class="data-table" id="it-custBody"></table></div>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-header"><div class="section-title">仓库对比（最新日）</div></div>
-          <div class="chart-container" id="c_wh"></div>
-        </div>
-
-        <div class="section">
-          <div class="section-header"><div class="section-title">事业部异常排名（最新日）</div></div>
-          <div class="table-wrap">
-            <table class="data-table" id="unitTable">
-              <thead><tr><th>事业部</th><th>当日未交运</th><th>调拨未完成</th><th>截单前装箱未交运</th><th>备注</th></tr></thead>
-              <tbody></tbody>
-            </table>
+        <!-- ===== 日度监控：时效 SLA ===== -->
+        <div id="pane-d_sla" class="tab-pane">
+          <div class="sla-period-bar">
+            <span class="sla-note-label">数据范围：</span>
+            <span class="sla-period-btn active" data-period="all" onclick="Daily.setSlaPeriod('all')">全量</span>
+            <span class="sla-period-btn" data-period="halfmonth" onclick="Daily.setSlaPeriod('halfmonth')">近半月</span>
+            <span class="sla-period-btn" data-period="month" onclick="Daily.setSlaPeriod('month')">近一月</span>
+            <span class="sla-period-btn" data-period="twomonth" onclick="Daily.setSlaPeriod('twomonth')">近两月</span>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">⏱️ 各渠道大类时效 SLA（已签收单，剔除异常）</div>
+              <span class="section-note">平均实际时效 = 签收−仓库出货；建议时效 = P95（95%正常单可达成）；参考时效 = Z列原值</span>
+            </div>
+            <div class="chart-container" id="sla-chart"></div>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">📋 渠道 SLA 明细</div></div>
+            <div class="table-wrap"><table class="data-table" id="sla-table"></table></div>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-header"><div class="section-title">完整 14 字段日报（最新日）</div></div>
-          <div class="table-wrap">
-            <table class="data-table" id="dailyTable">
-              <thead><tr><th>字段</th><th>数值</th><th>说明</th></tr></thead>
-              <tbody></tbody>
-            </table>
+        <!-- ===== 日度监控：异常监控 ===== -->
+        <div id="pane-d_abnormal" class="tab-pane">
+          <div id="ab-cards"></div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">📋 异常单明细（查验中/开查中/索赔中/赔付中）</div></div>
+            <div class="table-wrap" style="max-height:420px;overflow:auto">
+              <div id="ab-table"></div>
+            </div>
           </div>
         </div>
+
+        <!-- ===== 日度监控：渠道占比 ===== -->
+        <div id="pane-d_cost" class="tab-pane">
+          <div class="cost-bar">
+            <span class="cost-dim-btn active" data-dim="week" onclick="Daily.setCostDim('week')">周</span>
+            <span class="cost-dim-btn" data-dim="month" onclick="Daily.setCostDim('month')">月</span>
+            <span class="cost-dim-btn" data-dim="customer" onclick="Daily.setCostDim('customer')">客户(事业部)</span>
+            <span class="cost-sep"></span>
+            <span class="cost-metric-btn active" data-metric="tickets" onclick="Daily.setCostMetric('tickets')">票数</span>
+            <span class="cost-metric-btn" data-metric="weight" onclick="Daily.setCostMetric('weight')">吨数</span>
+            <span class="cost-metric-btn" data-metric="volume" onclick="Daily.setCostMetric('volume')">方数</span>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">🥧 渠道结构占比</div></div>
+            <div class="chart-container" id="cost-chart"></div>
+            <div id="cost-note" class="ov-note"></div>
+          </div>
+          <div class="section">
+            <div class="section-header"><div class="section-title">📊 维度 × 渠道 占比</div></div>
+            <div class="table-wrap"><table class="data-table" id="cost-table"></table></div>
+          </div>
+        </div>
+
+        <!-- ===== 日度监控：明日预警 ===== -->
+        <div id="pane-d_tomorrow" class="tab-pane">
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">⏰ 时效超期预警（在途未妥投，按超期梯度）</div>
+              <span class="section-note">超过 5 / 7 / 10 天仍未妥投的订单</span>
+            </div>
+            <div id="tm-overdue"></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <div class="section-title">📅 明日到港 / 清关 / 派送 预警</div>
+              <span class="section-note">解析状态备注里程碑日期，==次日则预警；单票多里程碑以<b>最新(日期最大)</b>里程碑为核心</span>
+            </div>
+            <div id="tm-mile"></div>
+          </div>
+        </div>
+
+        <div class="footer-space"></div>
       </div>
-    </div>
-
-    <div class="footer-space"></div>
+    </main>
   </div>
 </div>
 
@@ -609,9 +502,8 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script defer src="chayan.js?v=20260904e"></script>
-<script defer src="daily.js?v=20260826f"></script>
-<script defer src="warehouse.js?v=20260826f"></script>
+<script defer src="chayan.js?v=20260922a"></script>
+<script defer src="daily.js?v=20260922a"></script>
 <script>
 // 初始化日期显示
 (function(){
@@ -619,7 +511,6 @@
   const wds = ['周日','周一','周二','周三','周四','周五','周六'];
   document.getElementById('headerDate').textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${wds[d.getDay()]}`;
   if (window.Daily) Daily.init();
-  if (window.Warehouse) Warehouse.init();
 })();
 </script>
 </body>

@@ -282,7 +282,7 @@ const Daily = (function () {
     // 分享模式下不覆盖已注入的内容
     if (typeof _shareMode !== 'undefined' && _shareMode) return;
     const el = document.getElementById(htmlId);
-    if (el) el.innerHTML = '<div style="padding:30px;text-align:center;color:#999">请先上传今日跟踪表（若要看较昨日变动，请一并选择昨日表）</div>';
+    if (el) el.innerHTML = '<div style="padding:30px;text-align:center;color:#999">数据未加载（请确认 data.json 已生成，或用页面底部应急入口上传最新跟踪表）</div>';
   }
 
   // ============================================================
@@ -341,7 +341,7 @@ const Daily = (function () {
         <span>当日新增查验 较昨日 <b class="${dNew >= 0 ? 'up' : 'down'}">${dNew >= 0 ? '+' : ''}${dNew}</b></span>
       </div>`;
     } else {
-      extra += `<div class="ov-note" style="color:#e08e0b">未载入昨日表，异常监控暂不显示"较昨日变动"。</div>`;
+      extra += `<div class="ov-note" style="color:#888">单表快照模式：按需求已取消双日对比，日环比暂不显示。</div>`;
     }
     document.getElementById('ov-extra').innerHTML = extra;
   }
@@ -540,7 +540,7 @@ const Daily = (function () {
       // 去掉"查验进行中 较昨日"——与"近两日新增查验"信息重复
       deltaHtml = `<div class="ab-delta">${mk(t.abnormal - t.inspecting, y.abnormal - y.inspecting, '异常单(索赔/赔付)')}${mk(t.newInspect, y.newInspect, '近两日新增查验')}</div>`;
     } else {
-      deltaHtml = '<div class="ov-note" style="color:#e08e0b">未载入昨日表，暂不显示"较昨日变动"。</div>';
+      deltaHtml = '<div class="ov-note" style="color:#888">单表快照模式：按需求已取消双日对比，日环比暂不显示。</div>';
     }
 
     document.getElementById('ab-cards').innerHTML =

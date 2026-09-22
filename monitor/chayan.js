@@ -350,6 +350,7 @@ const COLORS = {
 // ===================== 全局状态 =====================
 let rawData = [];       // 原始行数据
 let records = [];       // 展开后的票记录
+let dataMeta = {};      // data.json 的 meta（来源文件名、数据基准日等）
 let maxShipDate = null; // 数据中最大发货日期
 let aggByTime = {};     // 时间聚合
 let aggByChannel = {};  // 渠道大类聚合
@@ -1073,15 +1074,15 @@ function createHeatmapOption(title, xLabels, yLabels, data) {
 
 // ===================== 核心处理流程 =====================
 
-async function loadAndProcess(file, fileDate) {
+async function loadAndProcessRows(rows, meta) {
   try {
     showLoading(true);
-    rawData = await readExcel(file);
+    rawData = rows;
     const res = processData(rawData);
     records = res.records;
     maxShipDate = res.maxDate;
-    // 注入今日表给日度监控看板（fileDate 由文件名日期推导 TODAY）
-    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData, fileDate || null);
+    // 注入原始行给日度监控看板（单表快照：不传昨日对比；TODAY 取真实今日）
+    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData, null);
     if (res.skippedNoDate > 0) {
       showToast(`⚠️ 有 ${res.skippedNoDate} 行因缺少或无法识别「仓库出货日期」，未参与周度趋势统计（请检查日期格式，如 2026年7月21日、21/07/2026）。`, 'warn');
     } else {
@@ -1117,10 +1118,8 @@ async function loadAndProcess(file, fileDate) {
       .slice(0, 6)
       .map(([k]) => k);
 
-    // 隐藏上传面板，显示主内容
-    const uploadPanel = document.getElementById('uploadPanel');
+    // 显示主内容区（上传面板已在 PC 版移除）
     const mainContent = document.getElementById('mainContent');
-    if (uploadPanel) uploadPanel.style.display = 'none';
     if (mainContent) mainContent.style.display = 'block';
 
     // 显示分享链接按钮
@@ -1152,6 +1151,41 @@ async function loadAndProcess(file, fileDate) {
     showLoading(false);
     return false;
   }
+}
+
+// 自动从 data.json 加载（对齐 logistics-dashboard 范式：每日17点由脚本生成静态数据）
+async function loadFromServer() {
+  try {
+    showLoading(true);
+    const resp = await fetch('data.json', { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    if (!rows.length) throw new Error('data.json 无记录');
+    dataMeta = data.meta || {};
+    // 数据基准日写入头部（若可用）
+    if (dataMeta.dataDate) {
+      const hd = document.getElementById('headerDate');
+      if (hd) hd.textContent = dataMeta.dataDate + '（数据基准日）';
+    }
+    await loadAndProcessRows(rows, dataMeta);
+    showLoading(false);
+  } catch (err) {
+    console.error('[load] fetch data.json failed:', err);
+    showLoading(false);
+    showDataLoadError(err && err.message ? err.message : String(err));
+  }
+}
+
+// 自动加载失败时的提示 + 单文件应急上传兜底
+function showDataLoadError(msg) {
+  const box = document.getElementById('loadError');
+  if (box) {
+    box.style.display = 'block';
+    const el = document.getElementById('loadErrorMsg');
+    if (el) el.textContent = msg || '加载失败';
+  }
+  if (typeof showToast === 'function') showToast('⚠️ 无法自动加载 data.json：' + (msg || ''), 'warn');
 }
 
 function showLoading(show) {
@@ -2178,7 +2212,7 @@ function renderTableCustom(tableId, rows, headers, keys) {
 // ===================== 导出 Excel =====================
 function exportToExcel() {
   if (!records || records.length === 0) {
-    alert('请先上传产品跟踪表再导出');
+    alert('请先加载数据再导出');
     return;
   }
 
@@ -2413,10 +2447,9 @@ function exportToExcel() {
     .sort((a, b) => b[1].overallRate - a[1].overallRate)
     .map(([k, v]) => ({ 素芸物流渠道: k, 票数: v.totalTickets, 起运港查验率: num2(v.domesticRate), 目的港查验率: num2(v.foreignRate), 综合查验率: num2(v.overallRate) })));
 
-  // 文件名：原文件名 + 日期
-  const fileInputEl = document.getElementById('fileInput');
-  const srcName = (fileInputEl && fileInputEl.files && fileInputEl.files[0])
-    ? fileInputEl.files[0].name.replace(/\.xlsx?$/i, '') : '数据';
+  // 文件名：数据源文件名 + 日期（data.json meta 中的 sourceFile，回退为"数据"）
+  const srcName = (dataMeta && dataMeta.sourceFile)
+    ? String(dataMeta.sourceFile).replace(/\.xlsx?$/i, '') : '数据';
   const now = new Date();
   const ds = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   XLSX.writeFile(wb, `查验率统计_${srcName}_${ds}.xlsx`);
@@ -2709,10 +2742,8 @@ async function tryLoadFromHash() {
   try { snap = JSON.parse(json); } catch (e) { console.error('[share] JSON.parse failed:', e.message?.slice(0,100)); return false; }
   if (!snap || !snap.v) { console.error('[share] invalid snapshot version'); return false; }
 
-  // 隐藏上传面板，显示主内容
-  const up = document.getElementById('uploadPanel');
+  // 显示主内容（分享快照注入）
   const mc = document.getElementById('mainContent');
-  if (up) up.style.display = 'none';
   if (mc) mc.style.display = 'block';
 
   // 恢复日期
@@ -2822,57 +2853,6 @@ async function tryLoadFromHash() {
 }
 
 function initEvents() {
-  // 文件上传（支持多选：按文件名日期自动区分今日/昨日）
-  function fileDateFromName(name) {
-    const s = name.replace(/\.xlsx?$/i, '');
-    let m;
-    m = s.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-    m = s.match(/(\d{4})(\d{2})(\d{2})/);
-    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-    const y = new Date().getFullYear();
-    m = s.match(/(\d{2})(\d{2})/);
-    if (m) { const mo = +m[1], da = +m[2]; if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return new Date(Date.UTC(y, mo - 1, da)); }
-    m = s.match(/(\d{1,2})[月.\-/](\d{1,2})/);
-    if (m) { const mo = +m[1], da = +m[2]; if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return new Date(Date.UTC(y, mo - 1, da)); }
-    return null;
-  }
-  async function handleUploadFiles(files) {
-    const list = Array.from(files).filter(f => /\.xlsx?$/i.test(f.name));
-    if (list.length === 0) return;
-    const items = [];
-    for (const f of list) {
-      const rows = await readExcel(f);
-      items.push({ file: f, rows, date: fileDateFromName(f.name) });
-    }
-    items.sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
-    const todayItem = items[0];
-    const yesterdayItem = items.length > 1 ? items[1] : null;
-    await loadAndProcess(todayItem.file, todayItem.date);
-    if (yesterdayItem && typeof Daily !== 'undefined' && Daily.setYesterday) {
-      Daily.setYesterday(yesterdayItem.rows, yesterdayItem.date);
-      const td = todayItem.date ? (todayItem.date.getMonth() + 1) + '/' + todayItem.date.getDate() : '今日';
-      const yd = yesterdayItem.date ? (yesterdayItem.date.getMonth() + 1) + '/' + yesterdayItem.date.getDate() : '昨日';
-      setTimeout(() => showToast(`✓ 已按文件名日期区分：今日=${td}，昨日=${yd}（异常监控显示较昨日变动）`, 'success'), 400);
-    }
-  }
-
-  const dropZone = document.getElementById('dropZone');
-  const fileInput = document.getElementById('fileInput');
-  if (!dropZone || !fileInput) return;
-
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    if (e.dataTransfer.files && e.dataTransfer.files.length) handleUploadFiles(e.dataTransfer.files);
-  });
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files.length) handleUploadFiles(e.target.files);
-  });
-
   // 粒度切换
   document.querySelectorAll('.granularity-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2901,9 +2881,25 @@ function initEvents() {
     searchInput.addEventListener('input', () => filterDetailTable(searchInput.value));
   }
 
-  // 仓配监控入口（独立于产品跟踪表）
-  const enterWh = document.getElementById('enterWarehouseBtn');
-  if (enterWh) enterWh.addEventListener('click', enterWarehouseOnly);
+  // 应急单文件上传（仅当 data.json 自动加载失败时使用，替代旧版"上传两份对比"）
+  const fallbackInput = document.getElementById('fallbackFileInput');
+  if (fallbackInput) {
+    fallbackInput.addEventListener('change', async (e) => {
+      if (e.target.files && e.target.files.length) {
+        try {
+          showLoading(true);
+          const rows = await readExcel(e.target.files[0]);
+          await loadAndProcessRows(rows, {});
+          const box = document.getElementById('loadError');
+          if (box) box.style.display = 'none';
+          showLoading(false);
+        } catch (err) {
+          showLoading(false);
+          alert('文件解析失败：' + (err && err.message ? err.message : err));
+        }
+      }
+    });
+  }
 }
 
 function filterDetailTable(keyword) {
@@ -2938,22 +2934,6 @@ function filterDetailTable(keyword) {
   }
 }
 
-// ===================== 仓配监控入口 =====================
-// 重新打开产品跟踪表上传面板（随时可补传，不影响已加载的仓配数据）
-function openTrackUpload() {
-  const up = document.getElementById('uploadPanel');
-  if (up) up.style.display = 'flex';
-}
-// 仅查看仓配：隐藏产品跟踪表上传面板，直接进入仓配标签（无需先传产品跟踪表）
-function enterWarehouseOnly() {
-  const up = document.getElementById('uploadPanel');
-  const mc = document.getElementById('mainContent');
-  if (up) up.style.display = 'none';
-  if (mc) mc.style.display = 'block';
-  _shareMode = false;
-  switchTab('warehouse');
-}
-
 // ===================== Tab 切换 =====================
 
 function switchTab(tabName) {
@@ -2977,8 +2957,6 @@ function switchTab(tabName) {
       filterDetailTable(searchInput ? searchInput.value : '');
     }
     if (tabName === 'stagnation') updateStagnationTab();
-    // 仓配监控看板（独立数据源：仓配每日报表）
-    if (tabName === 'warehouse' && typeof Warehouse !== 'undefined') Warehouse.render();
 
     // 日度监控看板（分享模式下同样跳过，保留已注入的内容）
     if (typeof Daily !== 'undefined') {
@@ -2996,8 +2974,8 @@ function switchTab(tabName) {
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', () => {
-  // 优先尝试从分享链接加载（领导免上传）；加载失败（链接损坏/被截断）则回退上传界面
+  // 优先尝试从分享链接加载（领导免上传）；加载失败则自动从 data.json 加载（每日17点脚本生成）
   tryLoadFromHash().then(ok => {
-    if (!ok) initEvents();
-  }).catch(() => initEvents());
+    if (!ok) { initEvents(); loadFromServer(); }
+  }).catch(() => { initEvents(); loadFromServer(); });
 });

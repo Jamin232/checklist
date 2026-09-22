@@ -295,26 +295,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .cust-btn:hover{border-color:#bbb;background:#f8f9fa}
 .cust-btn.active{background:var(--primary);color:#fff;border-color:var(--primary-dark);font-weight:600}
 
-/* ===================== 仓配监控（独立模块） ===================== */
+/* 通用工具类 */
 .hidden{display:none !important}
-
-/* 上传面板内的仓配入口 */
-.upload-warehouse-entry{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:0.5px dashed #eee;font-size:12px;color:#888}
-.upload-warehouse-entry .export-btn{padding:7px 14px;font-size:12px}
-
-/* 仓配标签内上传区 */
-.wh-upload-zone{background:#fff;border-radius:var(--radius);margin:14px;padding:40px 20px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.wh-upload-zone .upload-icon{font-size:46px;margin-bottom:8px}
-.wh-upload-zone .upload-title{font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text)}
-.wh-upload-zone .upload-desc{font-size:12px;color:var(--text-secondary);margin-bottom:18px;line-height:1.6}
-.wh-dropzone{max-width:360px;margin:0 auto 0}
-.wh-dropzone.active{border-color:var(--primary);background:#f0fdf5}
-
-/* 工具栏（月/仓库选择器 + 导出） */
-.wh-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#fff;margin:10px 10px 0;border-radius:var(--radius) 0 0;border:0.5px solid #e8e8e8;border-bottom:none}
-.wh-toolbar label{font-size:13px;color:var(--text-secondary)}
-.wh-toolbar select{padding:6px 10px;border:1px solid #d0d7e2;border-radius:8px;background:#fff;font-size:13px;color:var(--text)}
-.wh-toolbar .export-btn{margin-left:auto;padding:7px 14px;font-size:12px}
 
 /* 结论框 */
 .conclusions{background:#fff8f3 !important;border:1px solid #ffe2cc !important}
@@ -344,4 +326,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 /* 两列网格（窄屏堆叠） */
 .grid2{display:grid;grid-template-columns:1fr;gap:18px}
 @media(min-width:900px){.grid2{grid-template-columns:1fr 1fr}}
+
+/* ===================== PC 端布局（左侧导航 + 主区，对齐 logistics-dashboard 范式） ===================== */
+/* 覆盖旧版手机版 max-width:640px 限制，改为全宽 */
+.app{max-width:none;width:100%;display:flex;flex-direction:column;min-height:100vh}
+.layout{display:flex;flex:1;min-height:0;align-items:stretch}
+
+/* 左侧固定导航 */
+.sidebar{
+  width:212px;flex:0 0 212px;background:#fff;border-right:1px solid var(--border);
+  position:sticky;top:62px;align-self:flex-start;height:calc(100vh - 62px);overflow-y:auto;
+  padding:14px 10px;display:flex;flex-direction:column;gap:2px;
+  box-shadow:2px 0 10px rgba(0,0,0,.03);z-index:5;
+}
+.nav-section{font-size:11px;color:#9aa3af;font-weight:700;letter-spacing:.6px;margin:16px 6px 4px}
+.nav-section:first-child{margin-top:2px}
+.nav-sep{height:1px;background:var(--border);margin:10px 6px}
+/* tab-btn 由横排标签改为侧栏条目 */
+.tab-btn{
+  flex:0 0 auto;text-align:left;padding:9px 12px;font-size:13px;color:#555;cursor:pointer;
+  border-bottom:none;border-radius:8px;background:transparent;transition:all .15s;white-space:nowrap;
+}
+.tab-btn:hover{background:#f3f5f7}
+.tab-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600}
+.sidebar-actions{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px}
+.sidebar-btn{
+  background:#fff;color:var(--text);border:1px solid var(--border);border-radius:8px;
+  padding:9px 12px;font-size:13px;cursor:pointer;transition:all .15s;text-align:center;
+}
+.sidebar-btn:hover{background:#f3f5f7;border-color:#cfd6df}
+.sidebar-btn:active{transform:scale(.98)}
+
+/* 主区：随页面滚动，超宽屏内容居中收窄 */
+.main{flex:1;min-width:0;background:var(--bg)}
+.main #mainContent{max-width:1320px;margin:0 auto}
+
+/* 自动加载失败提示 + 应急上传 */
+.load-error{margin:16px;padding:0;border-radius:10px;background:#fff4f4;border:1px solid #f3c2c2;overflow:hidden}
+.load-error-inner{padding:14px 16px}
+.load-error-title{font-size:14px;font-weight:700;color:var(--danger);margin-bottom:6px}
+.load-error-msg{font-size:12px;color:#a33;margin-bottom:8px;word-break:break-all}
+.load-error-hint{font-size:12px;color:#666;line-height:1.6}
+.load-error-hint input[type=file]{display:block;margin-top:8px;font-size:12px}
+
+/* 宽屏下 KPI 行与图表容器更舒展 */
+@media(min-width:1100px){
+  .kpi-row{padding:12px 16px}
+  .chart-container{height:340px}
+}
 
