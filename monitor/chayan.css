@@ -1,16 +1,26 @@
 /* ===================== 查验率监控样式 ===================== */
 :root {
-  --primary: #07c160;
-  --primary-dark: #06ad56;
-  --danger: #d62929;
-  --warning: #e6a23c;
-  --info: #1764e8;
-  --bg: #f5f5f5;
+  /* 对齐事业部看板：深蓝品牌 + 青绿/琥珀/红/紫/青 语义色 */
+  --brand: #2563eb;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --green: #10b981;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --purple: #8b5cf6;
+  --cyan: #06b6d4;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --info: #2563eb;
+  --bg: #f4f6fb;
   --card: #fff;
-  --border: #e5e5e5;
-  --text: #222;
-  --text-secondary: #666;
-  --radius: 8px;
+  --border: #e5e7eb;
+  --text: #1f2937;
+  --text-secondary: #6b7280;
+  --radius: 10px;
+  --nav-bg: #0f172a;
+  --nav-text: #cbd5e1;
+  --nav-active: #1e293b;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -24,7 +34,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .toast-info{background:var(--info)}
 
 /* Header */
-.header{background:linear-gradient(135deg,#0d6e3e,var(--primary));color:#fff;padding:14px 16px 10px;position:sticky;top:0;z-index:10}
+.header{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;padding:14px 16px 12px;position:sticky;top:0;z-index:10}
 .header-top{display:flex;align-items:center;justify-content:space-between}
 .header h1{font-size:17px;font-weight:600}
 .date-bar{font-size:12px;opacity:.85}
@@ -334,27 +344,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 
 /* 左侧固定导航 */
 .sidebar{
-  width:212px;flex:0 0 212px;background:#fff;border-right:1px solid var(--border);
+  width:212px;flex:0 0 212px;background:var(--nav-bg);border-right:1px solid #1e293b;
   position:sticky;top:62px;align-self:flex-start;height:calc(100vh - 62px);overflow-y:auto;
-  padding:14px 10px;display:flex;flex-direction:column;gap:2px;
-  box-shadow:2px 0 10px rgba(0,0,0,.03);z-index:5;
+  padding:16px 10px;display:flex;flex-direction:column;gap:2px;
+  box-shadow:2px 0 10px rgba(0,0,0,.06);z-index:5;
 }
-.nav-section{font-size:11px;color:#9aa3af;font-weight:700;letter-spacing:.6px;margin:16px 6px 4px}
+.nav-section{font-size:11px;color:#64748b;font-weight:700;letter-spacing:.6px;margin:16px 10px 4px}
 .nav-section:first-child{margin-top:2px}
-.nav-sep{height:1px;background:var(--border);margin:10px 6px}
-/* tab-btn 由横排标签改为侧栏条目 */
+.nav-sep{height:1px;background:#1e293b;margin:10px 8px}
+/* tab-btn 侧栏条目（深色导航） */
 .tab-btn{
-  flex:0 0 auto;text-align:left;padding:9px 12px;font-size:13px;color:#555;cursor:pointer;
-  border-bottom:none;border-radius:8px;background:transparent;transition:all .15s;white-space:nowrap;
+  flex:0 0 auto;text-align:left;padding:9px 14px;font-size:13px;color:var(--nav-text);cursor:pointer;
+  border-bottom:none;border-left:3px solid transparent;border-radius:0 8px 8px 0;background:transparent;transition:all .15s;white-space:nowrap;
 }
-.tab-btn:hover{background:#f3f5f7}
-.tab-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600}
+.tab-btn:hover{background:var(--nav-active);color:#fff}
+.tab-btn.active{background:var(--nav-active);color:#fff;border-left-color:var(--brand);font-weight:600}
 .sidebar-actions{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px}
 .sidebar-btn{
-  background:#fff;color:var(--text);border:1px solid var(--border);border-radius:8px;
+  background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;
   padding:9px 12px;font-size:13px;cursor:pointer;transition:all .15s;text-align:center;
 }
-.sidebar-btn:hover{background:#f3f5f7;border-color:#cfd6df}
+.sidebar-btn:hover{background:#334155;border-color:#475569}
 .sidebar-btn:active{transform:scale(.98)}
 
 /* 主区：随页面滚动，超宽屏内容居中收窄 */

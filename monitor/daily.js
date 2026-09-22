@@ -328,6 +328,48 @@ const Daily = (function () {
         <div class="kpi-sub">${c.sub}</div>
       </div>`).join('');
 
+    // 月度趋势：发运量 + 时效达标率（口径：仓库出货日期按月聚合；达标=已签收且实际时效≤参考时效）
+    const mm = {};
+    todayRecs.forEach(r => {
+      if (!r.shipDate) return;
+      const m = '' + r.shipDate.getUTCFullYear() + '-' + String(r.shipDate.getUTCMonth() + 1).padStart(2, '0');
+      if (!mm[m]) mm[m] = { n: 0, signed: 0, val: 0, ot: 0 };
+      mm[m].n++;
+      if (!r.inTransit) {
+        mm[m].signed++;
+        if (r.refLead > 0) {
+          mm[m].val++;
+          if (dayDiff(r.signTime, r.shipDate) <= r.refLead) mm[m].ot++;
+        }
+      }
+    });
+    const months = Object.keys(mm).sort();
+    if (months.length) {
+      const vol = months.map(m => mm[m].n);
+      const sg = months.map(m => mm[m].signed);
+      const rate = months.map(m => { const v = mm[m]; return v.val ? +(v.ot / v.val * 100).toFixed(1) : null; });
+      setOpt('ovTrend', {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['发运量', '已签收'], bottom: 0 },
+        grid: { left: 52, right: 18, top: 18, bottom: 46 },
+        xAxis: { type: 'category', data: months, axisLabel: { rotate: 30, fontSize: 10 } },
+        yAxis: { type: 'value', name: '票' },
+        series: [
+          { name: '发运量', type: 'line', data: vol, smooth: true, showSymbol: false, areaStyle: { opacity: .15 }, itemStyle: { color: '#2563eb' } },
+          { name: '已签收', type: 'line', data: sg, smooth: true, showSymbol: false, itemStyle: { color: '#10b981' } }
+        ]
+      });
+      setOpt('ovRate', {
+        tooltip: { trigger: 'axis' },
+        grid: { left: 52, right: 18, top: 18, bottom: 46 },
+        xAxis: { type: 'category', data: months, axisLabel: { rotate: 30, fontSize: 10 } },
+        yAxis: { type: 'value', name: '%', max: 100 },
+        series: [{ name: '时效达标率', type: 'line', data: rate, smooth: true, showSymbol: false, areaStyle: { opacity: .15 }, lineStyle: { width: 2 }, itemStyle: { color: '#06b6d4' } }]
+      });
+    } else {
+      noData('ovTrend'); noData('ovRate');
+    }
+
     // 昨日对比（异常相关）
     let extra = `<div class="ov-note">数据基准日：${fmtDate(TODAY)} ｜ 在途定义：实际签收时间为空即视为在途（含赔付中/索赔中/开查中未签收单）。</div>`;
     if (yesterdayRecs) {
