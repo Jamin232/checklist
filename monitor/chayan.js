@@ -1157,12 +1157,26 @@ async function loadAndProcessRows(rows, meta) {
 async function loadFromServer() {
   try {
     showLoading(true);
-    const resp = await fetch('data.json', { cache: 'no-store' });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    // 60s 超时：避免大文件在网络差时无限挂起
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    let resp;
+    try {
+      resp = await fetch('data.json', { cache: 'no-store', signal: ctrl.signal });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('加载超时（>60s）：可能是网络慢或 data.json 未部署');
+      throw new Error('网络请求失败：' + (e.message || e));
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + '（' + (resp.status === 404 ? 'data.json 未找到，请确认每日脚本已生成并推送' : resp.statusText) + '）');
     const data = await resp.json();
     const rows = Array.isArray(data.rows) ? data.rows : [];
     if (!rows.length) throw new Error('data.json 无记录');
     dataMeta = data.meta || {};
+    // 隐藏错误框（之前若显示过）
+    const box = document.getElementById('loadError');
+    if (box) box.style.display = 'none';
     // 数据基准日写入头部（若可用）
     if (dataMeta.dataDate) {
       const hd = document.getElementById('headerDate');
@@ -1177,13 +1191,23 @@ async function loadFromServer() {
   }
 }
 
-// 自动加载失败时的提示 + 单文件应急上传兜底
+// 自动加载失败时的提示 + 单文件应急上传兜底 + 重试
 function showDataLoadError(msg) {
   const box = document.getElementById('loadError');
   if (box) {
     box.style.display = 'block';
     const el = document.getElementById('loadErrorMsg');
     if (el) el.textContent = msg || '加载失败';
+  }
+  // 给重试按钮接线（只绑一次）
+  const retry = document.getElementById('retryLoadBtn');
+  if (retry && !retry._bound) {
+    retry._bound = true;
+    retry.addEventListener('click', () => {
+      const b = document.getElementById('loadError');
+      if (b) b.style.display = 'none';
+      loadFromServer();
+    });
   }
   if (typeof showToast === 'function') showToast('⚠️ 无法自动加载 data.json：' + (msg || ''), 'warn');
 }

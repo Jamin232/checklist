@@ -368,6 +368,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .load-error-msg{font-size:12px;color:#a33;margin-bottom:8px;word-break:break-all}
 .load-error-hint{font-size:12px;color:#666;line-height:1.6}
 .load-error-hint input[type=file]{display:block;margin-top:8px;font-size:12px}
+.load-error-hint code{background:#f3f3f3;padding:1px 5px;border-radius:4px;font-size:11px}
+.load-error-actions{margin:10px 0 4px}
+.load-error-actions .sidebar-btn{display:inline-block;padding:7px 16px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer}
+.load-error-actions .sidebar-btn:hover{opacity:.9}
 
 /* 宽屏下 KPI 行与图表容器更舒展 */
 @media(min-width:1100px){

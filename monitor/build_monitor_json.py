@@ -99,6 +99,18 @@ def find_sheet(wb):
     return wb.sheetnames[0]
 
 
+# 看板实际引用的列（chayan.js / daily.js 经字面量+find() 映射全量核对，2026-09-22）。
+# 仅输出这些列即可：跟踪表其余 56 列（含 __col 空列）均为冗余，可省约 65% 体积。
+# 注意：若后续新增看板列，必须同步把对应表头加入此名单，否则该列会被丢弃。
+COLUMN_ALLOWLIST = [
+    "主出仓单号", "产品", "产品属性", "仓库出货日期", "代理", "代理渠道", "件数",
+    "入承运商仓日期", "分出仓单号", "到港日期", "参考时效", "国内查验时间", "国家",
+    "实际签收时间\n（当地时间）", "客户", "操作负责人", "方数CBM", "末端提取日",
+    "毛重", "状态备注", "目的地查验时间", "票数", "箱数", "类型", "素芸物流渠道",
+    "货物状态", "赔付", "起运日期", "链接", "销售名",
+]
+
+
 def build(excel_path, output_path):
     """读取 xlsx 主 sheet，输出 data.json。返回 (meta, row_count)。"""
     wb = load_workbook(excel_path, read_only=True, data_only=True)
@@ -145,10 +157,9 @@ def build(excel_path, output_path):
                 break
             continue
         empty_streak = 0
-        obj = {}
-        for i, h in enumerate(header):
-            val = row[i] if i < len(row) else ""
-            obj[h] = clean_cell(val)
+        obj = {h: clean_cell(row[i] if i < len(row) else "") for i, h in enumerate(header)}
+        # 仅保留看板实际使用的列（其余为跟踪表冗余列，可省约 65% 体积）
+        obj = {k: obj.get(k, "") for k in COLUMN_ALLOWLIST}
         records.append(obj)
         # 跟踪最大发货日（仅当该单元格是真实日期）
         if ship_idx is not None:

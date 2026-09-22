@@ -57,8 +57,12 @@
           <div class="load-error-inner">
             <div class="load-error-title">⚠️ 无法自动加载 data.json</div>
             <div class="load-error-msg" id="loadErrorMsg"></div>
+            <div class="load-error-actions">
+              <button id="retryLoadBtn" class="sidebar-btn" type="button">重试加载</button>
+            </div>
             <div class="load-error-hint">
-              请确认每日脚本已生成 data.json，或在下方选择最新《产品跟踪表》xlsx 应急加载（单文件，无昨日对比）：
+              若为 404：说明 data.json 尚未生成/推送，请运行每日脚本 <code>run_daily_monitor.py</code>。<br>
+              也可在下方选择最新《产品跟踪表》xlsx 应急加载（单文件，无昨日对比）：
               <input type="file" id="fallbackFileInput" accept=".xlsx">
             </div>
           </div>
