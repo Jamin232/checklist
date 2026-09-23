@@ -2674,6 +2674,69 @@ async function captureAllCharts() {
 }
 
 
+// ===================== 事件绑定 =====================
+
+function filterDetailTable(keyword) {
+  const kw = keyword.trim().toLowerCase();
+  const tbody = document.getElementById('detailTableBody');
+  if (!tbody) return;
+  const rows = records.filter(r => {
+    if (!kw) return true;
+    const text = `${(r.tickets || []).join(' ')} ${r.agent || ''} ${r.channel || ''} ${r.logisticChannel || ''} ${r.country || ''} ${r.type || ''} ${r.customer || ''}`.toLowerCase();
+    return text.includes(kw);
+  });
+  // 只展示前 200 条避免卡顿
+  const displayRows = rows.slice(0, 200);
+  tbody.innerHTML = displayRows.map(r => {
+    const status = r.isInspected ? (r.isDomestic && r.isForeign ? '双港查验' : (r.isDomestic ? '起运港查验' : (r.isForeign ? '目的港查验' : '查验'))) : '正常';
+    const statusClass = r.isInspected ? 'status-inspected' : 'status-normal';
+    return `<tr>
+      <td>${(r.tickets || []).slice(0, 2).join('<br>')}${(r.tickets || []).length > 2 ? '...' : ''}</td>
+      <td>${formatDate(r.shipDate)}</td>
+      <td>${r.country || ''}</td>
+      <td>${r.type || ''}</td>
+      <td>${r.channel || ''}</td>
+      <td>${r.agent || ''}</td>
+      <td>${r.logisticChannel || ''}</td>
+      <td class="${statusClass}">${status}</td>
+    </tr>`;
+  }).join('');
+  if (rows.length > 200) {
+    tbody.innerHTML += `<tr><td colspan="8" style="text-align:center;color:#999;padding:10px">还有 ${rows.length - 200} 条，请缩小搜索范围</td></tr>`;
+  }
+}
+
+function initEvents() {
+  // 粒度切换
+  document.querySelectorAll('.granularity-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.granularity-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentGranularity = btn.dataset.granularity;
+      updateDashboardTab();
+    });
+  });
+
+  // 阈值设置
+  const highInput = document.getElementById('highRiskInput');
+  const midInput = document.getElementById('midRiskInput');
+  if (highInput) {
+    highInput.value = SETTINGS.highRisk;
+    highInput.addEventListener('change', () => { SETTINGS.highRisk = parseFloat(highInput.value) || 5; updateAlertTab(); });
+  }
+  if (midInput) {
+    midInput.value = SETTINGS.midRisk;
+    midInput.addEventListener('change', () => { SETTINGS.midRisk = parseFloat(midInput.value) || 3; updateAlertTab(); });
+  }
+
+  // 搜索过滤
+  const searchInput = document.getElementById('detailSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => filterDetailTable(searchInput.value));
+  }
+}
+
+
 // ===================== Tab 切换 =====================
 
 function switchTab(tabName) {
