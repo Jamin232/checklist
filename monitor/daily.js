@@ -572,7 +572,14 @@ const Daily = (function () {
   }
 
   function setSlaPeriod(p) { slaPeriod = p; document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p)); renderSLA(); }
-  function setSlaDim(d) { slaDim = d; document.querySelectorAll('.sla-dim-btn').forEach(b => b.classList.toggle('active', b.dataset.dim === d)); renderSLA(); }
+  function setSlaDim(d) {
+    if (!d) d = document.getElementById('slaDimSelect')?.value || 'channel';
+    slaDim = d;
+    const sel = document.getElementById('slaDimSelect');
+    if (sel) sel.value = d;
+    renderSLA();
+  }
+  function resetSlaDim() { setSlaDim('channel'); }
 
   function slaKeyFn(r) {
     switch (slaDim) {
@@ -1139,7 +1146,7 @@ const Daily = (function () {
   // ---------------- 对外接口 ----------------
   return {
     setData, setYesterday, init,
-    setCostDim, setCostMetric, setSlaPeriod, setSlaDim,
+    setCostDim, setCostMetric, setSlaPeriod, setSlaDim, resetSlaDim,
     setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
     renderDelayAnalysis, renderInspByDate, renderUsOcean,

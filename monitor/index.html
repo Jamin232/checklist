@@ -8,7 +8,7 @@
 <!-- 全部加 defer：并行下载、HTML 先解析完、UI 先出来，脚本在 DOM 准备好后按序执行 -->
 <script defer src="xlsx.full.min.js?v=0.20.1"></script>
 <script defer src="echarts.min.js?v=5.5.0"></script>
-<link rel="stylesheet" href="chayan.css?v=20260923b">
+<link rel="stylesheet" href="chayan.css?v=20260923c">
 </head>
 <body>
 <div class="app">
@@ -453,15 +453,17 @@
             <span class="sla-period-btn" data-period="month" onclick="Daily.setSlaPeriod('month')">近一月</span>
             <span class="sla-period-btn" data-period="twomonth" onclick="Daily.setSlaPeriod('twomonth')">近两月</span>
           </div>
-          <div class="sla-dim-bar">
-            <span class="sla-note-label">维度：</span>
-            <span class="sla-dim-btn active" data-dim="channel" onclick="Daily.setSlaDim('channel')">渠道大类</span>
-            <span class="sla-dim-btn" data-dim="agent" onclick="Daily.setSlaDim('agent')">代理</span>
-            <span class="sla-dim-btn" data-dim="customer" onclick="Daily.setSlaDim('customer')">事业部</span>
-            <span class="sla-dim-btn" data-dim="logistic" onclick="Daily.setSlaDim('logistic')">素芸渠道</span>
-            <span class="sla-dim-btn" data-dim="transport" onclick="Daily.setSlaDim('transport')">运输方式</span>
-            <span class="sla-dim-btn" data-dim="cat" onclick="Daily.setSlaDim('cat')">国家+类型</span>
-            <span class="sla-dim-btn" data-dim="month" onclick="Daily.setSlaDim('month')">月份</span>
+          <div class="sla-dim-bar filterbar-like">
+            <label>维度分组<select id="slaDimSelect" onchange="Daily.setSlaDim(this.value)">
+              <option value="channel">渠道大类</option>
+              <option value="agent">代理</option>
+              <option value="customer">事业部</option>
+              <option value="logistic">素芸渠道</option>
+              <option value="transport">运输方式</option>
+              <option value="cat">国家+类型</option>
+              <option value="month">月份</option>
+            </select></label>
+            <button class="reset" onclick="Daily.resetSlaDim()">重置为渠道大类</button>
           </div>
           <div class="section">
             <div class="section-header">
@@ -612,8 +614,8 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script defer src="chayan.js?v=20260923b"></script>
-<script defer src="daily.js?v=20260923b"></script>
+<script defer src="chayan.js?v=20260923c"></script>
+<script defer src="daily.js?v=20260923c"></script>
 <script>
 // 初始化日期显示
 (function(){

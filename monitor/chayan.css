@@ -286,9 +286,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .sla-note-label{font-size:12px;color:#888;font-weight:500}
 .sla-period-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
 .sla-period-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
-.sla-dim-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
+.sla-dim-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
 .sla-dim-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
 .sla-dim-btn.active{background:#e6f0ff;color:var(--primary-dark);font-weight:600;border-color:#a9ccff}
+.sla-dim-bar.filterbar-like{align-items:flex-end}
+.sla-dim-bar.filterbar-like label{font-size:12px;color:#6b7280;display:flex;flex-direction:column;gap:3px}
+.sla-dim-bar.filterbar-like select{padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;color:#1f2937;min-width:130px;cursor:pointer}
+.sla-dim-bar.filterbar-like select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.12)}
+.sla-dim-bar.filterbar-like .reset{margin-left:auto;padding:5px 12px;border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;cursor:pointer;font-size:12px;color:#374151}
+.sla-dim-bar.filterbar-like .reset:hover{background:#f1f5f9;border-color:#d1d5db}
 
 /* 明日预警 梯度卡片（独立区块） */
 .tm-tier-group{display:flex;flex-direction:column;gap:14px;padding:6px 14px 14px}
