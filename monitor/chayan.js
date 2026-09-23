@@ -17,6 +17,8 @@ const SETTINGS = {
   minSampleBreakdown: 5  // 渠道/素芸渠道下钻到代理的细分最小样本数（低于此不列细分）
 };
 
+let _shareMode = false;  // 分享模式下禁止重新渲染，避免覆盖已注入快照
+
 // 物流跟踪状态提醒节点（按事业部 Word 文档中的 SLA 表）
 // 键：渠道类型；值：节点 -> 阈值(天)。null 表示无阈值（如***或非时段类规则）
 const SLA_RULES = {
@@ -2715,14 +2717,13 @@ function switchTab(tabName) {
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', () => {
+  initEvents();
   // 数据加载完成后，对当前激活的 Tab 补一次渲染（加载流程只渲染 chayan 周度标签页，
   // 日度监控面板需经 switchTab 才渲染；否则默认 d_overview 首屏空白）
   const afterDataLoad = () => {
     const ab = document.querySelector('.tab-btn.active');
     if (ab && ab.dataset.tab) switchTab(ab.dataset.tab);
   };
-  // 优先尝试从分享链接加载（领导免上传）；加载失败则自动从 data.json 加载（每日17点脚本生成）
-  tryLoadFromHash().then(ok => {
-    if (!ok) { initEvents(); loadFromServer().then(afterDataLoad).catch(() => {}); }
-  }).catch(() => { initEvents(); loadFromServer().then(afterDataLoad).catch(() => {}); });
+  // 从 data.json 加载（每日17点脚本生成）
+  loadFromServer().then(afterDataLoad).catch(() => {});
 });
