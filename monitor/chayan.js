@@ -2641,6 +2641,7 @@ async function captureAllCharts() {
     if (typeof Daily !== 'undefined') {
       Daily.renderOverview(); Daily.renderIntransit(); Daily.renderSLA();
       Daily.renderAbnormal(); Daily.renderCost(); Daily.renderTomorrow();
+      Daily.renderDelayAnalysis(); Daily.renderUsOcean(); Daily.renderInspByDate();
       Daily.resizeAllCharts();
     }
   } catch (e) { console.warn('[share] daily pre-capture warn:', e); }
@@ -2703,6 +2704,9 @@ function switchTab(tabName) {
       if (tabName === 'd_abnormal') Daily.renderAbnormal();
       if (tabName === 'd_cost') Daily.renderCost();
       if (tabName === 'd_tomorrow') Daily.renderTomorrow();
+      if (tabName === 'd_delay') Daily.renderDelayAnalysis();
+      if (tabName === 'd_usocean') Daily.renderUsOcean();
+      if (tabName === 'd_inspdate') Daily.renderInspByDate();
     }
   }
   // 再次 resize 确保渲染后尺寸正确

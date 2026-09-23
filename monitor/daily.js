@@ -12,6 +12,7 @@ const Daily = (function () {
   let yesterdayDate = null; // 昨日表文件名解析出的日期
   let _inited = false;
   let slaPeriod = 'all'; // 'all' | 'halfmonth' | 'month' | 'twomonth'
+  let slaDim = 'channel'; // 'channel' | 'agent' | 'customer' | 'logistic' | 'transport' | 'cat' | 'month'
 
   let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
   function computeToday(date) {
@@ -84,6 +85,25 @@ const Daily = (function () {
     if (m) return makeMDate(+m[1], +m[2]);
     return null;
   }
+  // 从状态备注中提取"查验发生日期"：定位含关键字的行，解析其中的日期（支持 年/月/日、月/日/年、月/日、月日 多种格式）。
+  // 仅当备注含关键字时才解析，返回 UTC 零点日期（year>=2020），无日期返回 null。
+  function extractInspectDate(remark, keyword) {
+    const s = safeStr(remark);
+    if (!s || !s.includes(keyword)) return null;
+    const lines = s.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.includes(keyword)) continue;
+      const m = line.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})|(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})|(\d{1,2})[-\/.](\d{1,2})|(\d{1,2})月(\d{1,2})日?/);
+      if (!m) continue;
+      let d = null;
+      if (m[1]) d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      else if (m[4]) d = new Date(Date.UTC(+m[6], +m[5] - 1, +m[4]));
+      else if (m[7]) d = makeMDate(+m[7], +m[8]);
+      else if (m[9]) d = makeMDate(+m[9], +m[10]);
+      if (d && d.getUTCFullYear() >= 2020) return d;
+    }
+    return null;
+  }
   // 由月/日构造日期（处理跨年）
   function makeMDate(month, day) {
     const y = TODAY.getUTCFullYear();
@@ -133,6 +153,26 @@ const Daily = (function () {
     if (!d) return '';
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }
+  // 美线海运船型：从「素芸物流渠道」名称关键字解析（价格梯度：左贵右廉）
+  function shipTypeOf(ch) {
+    if (!ch) return '';
+    if (/美森正班/.test(ch)) return '美森正班';
+    if (/美森/.test(ch)) return '美森加班';
+    if (/快船/.test(ch)) return '快船';
+    if (/普船/.test(ch)) return '普船';
+    return '';
+  }
+  // 派送类型：海卡→卡派，海派→快递派
+  function deliveryTypeOf(ch) {
+    if (/海卡/.test(ch)) return '卡派';
+    if (/海派/.test(ch)) return '快递派';
+    return '';
+  }
+  function mean(arr) {
+    const v = arr.filter(x => (+x || 0) > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  }
+  function transitOf(rs) { return rs.map(r => r.transitDays).filter(x => x > 0); }
 
   // ---------------- 解析：把原始行 -> daily 记录 ----------------
   // 按子串匹配列名，避免表头换行符(\n)差异导致整列读不到
@@ -160,7 +200,10 @@ const Daily = (function () {
       country: find('国家'),
       weight: find('毛重'),
       vol: find('方数CBM'),
-      ref: find('参考时效')
+      ref: find('参考时效'),
+      arr: find('到港日期'),
+      pay: find('赔付'),
+      late: find('物流最晚送达时间')
     };
   }
   function parseDailyRows(rows) {
@@ -181,26 +224,49 @@ const Daily = (function () {
       const shipDate = parseDate(row[map.ship]);
       const goodsStatus = safeStr(row[map.status]);
       const remark = safeStr(row[map.remark]);
-      const domInspectRaw = parseDate(row[map.dom]);
-      const destInspectRaw = parseDate(row[map.dest]);
-      // 查验日期合理性校验：国内查验时间列常含时长数字(如1,23天)而非日期，
-      // 被parseDate误解析为1899/1900年假日期 → 排除年份<2020的值
-      let domInspectDate = (domInspectRaw && domInspectRaw.getFullYear() >= 2020) ? domInspectRaw : null;
-      let destInspectDate = (destInspectRaw && destInspectRaw.getFullYear() >= 2020) ? destInspectRaw : null;
-      // 兜底：货物状态里常包含日期（如 "8/5查验中"），若时间列为空则用它作为查验开始时间
-      const statusDate = parseDateFromStatus(goodsStatus);
-      if (statusDate && !domInspectDate && !destInspectDate) {
-        domInspectDate = statusDate; // 仅作为计算查验开始时间的兜底，不指定是国内还是目的地
-      }
+      // 国内外查验判定：以状态备注文本为准（对齐 chayan.js 真实口径）。
+      // 原「国内查验时间/目的地查验时间」列实为时长字符串(如"1,23天")而非日期，不可用。
+      const isDomInsp = remark.includes('国内查验');
+      const isForeignInsp = remark.includes('国外查验');
+      // 从备注中提取查验发生日期（用于"今日新增查验"/查验进行中耗时），无日期则为 null
+      const domInspectDate = extractInspectDate(remark, '国内查验');
+      const destInspectDate = extractInspectDate(remark, '国外查验');
 
       const isInspecting = goodsStatus.includes('查验中'); // 仅海关查验（不含快递"开查中"）
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w));
+
+      // —— 派生字段（支撑 SLA多维 / 异常代理维度 / 延误分析 / 查验日期口径 / 美线海运 等模块）——
+      const transport = safeStr(row[map.type]) || '未知';
+      const logisticCh = safeStr(row[map.logi]);
+      const shipType = shipTypeOf(logisticCh);
+      const deliveryType = deliveryTypeOf(logisticCh);
+      const arrivalDate = parseDate(row[map.arr]);
+      const refLeadV = safeNum(row[map.ref]);
+      const intransit = signTime === null;
+      const transitDays = (!intransit && signTime && shipDate) ? Math.round(dayDiff(signTime, shipDate)) : null;
+      const overRefLead = intransit && refLeadV > 0 && shipDate ? (dayDiff(TODAY, shipDate) > refLeadV) : false;
+      const overdue = intransit && latestDeliver ? (TODAY > latestDeliver) : false;
+      const onTime = !intransit ? (refLeadV > 0 ? (transitDays <= refLeadV ? '是' : '否') : '已完成') : (overRefLead ? '未完成已超时效' : '在途');
+      const domInsp = isDomInsp;       // 备注含"国内查验"（起运港查验）
+      const ovsInsp = isForeignInsp;   // 备注含"国外查验"（目的港查验）
+      const isKaiCha = goodsStatus.includes('开查');
+      const isSuoPei = goodsStatus.includes('索赔');
+      const isLiPei = goodsStatus.includes('赔付') || /理赔/.test(goodsStatus) || /理赔|赔付/.test(remark);
+      const lossClaim = isKaiCha || isSuoPei || isLiPei;
+      const isDelayed = overRefLead;
+      const bizMonth = shipDate ? fmtYM(shipDate) : '未知';
+      const arrMonth = arrivalDate ? fmtYM(arrivalDate) : null;
+      // 月归属口径：起运港查验→出货月；目的港查验→到港月（对齐用户规则）
+      const domInspMonth = isDomInsp ? bizMonth : null;
+      const destInspMonth = isForeignInsp ? arrMonth : null;
 
       list.push({
         mainTicket: safeStr(row[map.main]),
         tickets, ticketCount,
         type: safeStr(row[map.type]),
-        logisticChannel: safeStr(row[map.logi]),
+        transport,
+        logisticChannel: logisticCh,
+        shipType, deliveryType, arrivalDate,
         // 渠道大类 = 国家 + 类型（与查验看板口径一致）
         channelCategory: (safeStr(row[map.country]) || '') + (safeStr(row[map.type]) || '') || undefined,
         agent: safeStr(row[map.agent]),
@@ -213,14 +279,17 @@ const Daily = (function () {
         shipDate,
         signTime,
         latestDeliver,
-        refLead: safeNum(row[map.ref]),
+        refLead: refLeadV,
         goodsStatus,
         remark,
         domInspectDate,
         destInspectDate,
-        inTransit: signTime === null,
+        inTransit: intransit,
         isInspecting,
-        isAbnormal
+        isAbnormal,
+        transitDays, overRefLead, overdue, onTime, domInsp, ovsInsp,
+        isKaiCha, isSuoPei, isLiPei, lossClaim, isDelayed,
+        bizMonth, domInspMonth, destInspMonth, arrMonth
       });
     }
     return list;
@@ -420,6 +489,38 @@ const Daily = (function () {
     renderTable('it-agentBody', groupSum(inTransit, r => r.agent), '代理');
     renderTable('it-custBody', groupSum(inTransit, r => r.customer), '客户');
 
+    // —— ④ 新增：超时(超参考时效) by 渠道 + 在途账龄分布 + 未完成已超时效清单 ——
+    const overList = inTransit.filter(r => r.overRefLead);
+    const byChOver = {};
+    overList.forEach(r => { const k = r.logisticChannel || '未知'; byChOver[k] = (byChOver[k] || 0) + 1; });
+    const chOver = Object.entries(byChOver).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    setOpt('it-overdueChart', {
+      tooltip: { trigger: 'axis' }, legend: { data: ['超参考时效票', '在途票'], bottom: 0 },
+      grid: { left: 50, right: 20, top: 20, bottom: 60 }, xAxis: { type: 'category', data: chOver.map(x => x[0]), axisLabel: { interval: 0, rotate: 30, fontSize: 10 } },
+      yAxis: { type: 'value', name: '票' },
+      series: [
+        { name: '超参考时效票', type: 'bar', data: chOver.map(x => x[1]), itemStyle: { color: '#ef4444' } },
+        { name: '在途票', type: 'bar', data: chOver.map(x => inTransit.filter(r => r.logisticChannel === x[0]).length), itemStyle: { color: '#cbd5e1' } }
+      ]
+    });
+    // 账龄分布（出货→今天）
+    const ages = inTransit.map(r => r.shipDate ? dayDiff(TODAY, r.shipDate) : 0).filter(x => x > 0);
+    const ageBuckets = ['0-15', '15-30', '30-45', '45-60', '60+']; const ageCnt = [0, 0, 0, 0, 0];
+    ages.forEach(a => { if (a <= 15) ageCnt[0]++; else if (a <= 30) ageCnt[1]++; else if (a <= 45) ageCnt[2]++; else if (a <= 60) ageCnt[3]++; else ageCnt[4]++; });
+    setOpt('it-ageChart', {
+      tooltip: { trigger: 'axis' }, grid: { left: 50, right: 20, top: 20, bottom: 40 },
+      xAxis: { type: 'category', data: ageBuckets }, yAxis: { type: 'value', name: '票' },
+      series: [{ type: 'bar', data: ageCnt, itemStyle: { color: '#06b6d4' } }]
+    });
+    // 未完成已超时效清单
+    const ovTb = document.getElementById('it-overdueTable');
+    if (ovTb) {
+      const list = overList.map(r => ({ r, over: (r.shipDate ? dayDiff(TODAY, r.shipDate) : 0) - (r.refLead || 0) })).filter(x => x.over > 0).sort((a, b) => b.over - a.over).slice(0, 100);
+      ovTb.innerHTML = `<table class="data-table"><thead><tr><th>分出仓单号</th><th>客户(事业部)</th><th>渠道</th><th>代理</th><th>出货日期</th><th>在途天数</th><th>参考时效</th><th>超期天数</th></tr></thead><tbody>` +
+        (list.length ? list.map(({ r, over }) => `<tr><td>${r.tickets.length > 1 ? r.tickets.slice(0, 2).join('<br>') + (r.tickets.length > 2 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 2}更多</span>` : '') : (r.tickets[0] || r.mainTicket)}</td><td>${r.customer}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.shipDate ? fmtDate(r.shipDate) : '—'}</td><td>${r.shipDate ? dayDiff(TODAY, r.shipDate) : '—'}</td><td>${r.refLead || '—'}</td><td class="rate-bad">${over}</td></tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:#999">无超时效在途单</td></tr>') +
+        `</tbody></table>`;
+    }
+
     // 汇总卡
     const tot = groupSum(inTransit, () => 'all').all || { tickets: 0, weight: 0, volume: 0 };
     const sum = document.getElementById('it-summary');
@@ -436,6 +537,12 @@ const Daily = (function () {
     el.innerHTML = `<tr><th>${dimLabel}</th><th>在途票数</th><th>占比</th><th>吨数</th><th>方数</th></tr>` +
       arr.map(x => `<tr><td>${x.key || '—'}</td><td>${x.tickets}</td><td>${(x.tickets / tot * 100).toFixed(1)}%</td><td>${(x.weight / 1000).toFixed(1)}</td><td>${x.volume.toFixed(1)}</td></tr>`).join('') +
       (arr.length === 0 ? '<tr><td colspan="5" style="text-align:center;color:#999">无数据</td></tr>' : '');
+  }
+  // 通用 KPI 卡片行（供新增模块复用）
+  function setKpiRow(id, arr) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = arr.map(c => `<div class="kpi-card ${c.cls || ''}"><div class="kpi-num">${c.num}</div><div class="kpi-label">${c.label}</div><div class="kpi-sub">${c.sub || ''}</div></div>`).join('');
   }
 
   // ============================================================
@@ -465,6 +572,19 @@ const Daily = (function () {
   }
 
   function setSlaPeriod(p) { slaPeriod = p; document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p)); renderSLA(); }
+  function setSlaDim(d) { slaDim = d; document.querySelectorAll('.sla-dim-btn').forEach(b => b.classList.toggle('active', b.dataset.dim === d)); renderSLA(); }
+
+  function slaKeyFn(r) {
+    switch (slaDim) {
+      case 'agent': return r.agent || '未知';
+      case 'customer': return r.customer || '未知';
+      case 'logistic': return r.logisticChannel || '未知';
+      case 'transport': return r.transport || '未知';
+      case 'month': return r.bizMonth || '未知';
+      case 'cat': return r.channelCategory || '未知';
+      default: return r.channelCategory || r.logisticChannel || '未知';
+    }
+  }
 
   function renderSLA() {
     if (!todayRecs) { noData('sla-chart'); noData('sla-table'); return; }
@@ -480,7 +600,7 @@ const Daily = (function () {
     const normalSigned = pool.filter(r => !r.inTransit && !isSlaAbnormal(r) && r.shipDate && r.signTime);
     const byCh = {};
     for (const r of normalSigned) {
-      const k = r.channelCategory || r.logisticChannel || '未知';
+      const k = slaKeyFn(r);
       if (!byCh[k]) byCh[k] = { leads: [], refLeads: [] };
       byCh[k].leads.push(Math.round(dayDiff(r.signTime, r.shipDate))); // 总时效=签收-仓库出货
       if (r.refLead > 0) byCh[k].refLeads.push(r.refLead);
@@ -632,6 +752,38 @@ const Daily = (function () {
       tb.innerHTML = filterBar +
         `<table class="data-table"><thead><tr><th>查验天数</th><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr></thead>` +
         `<tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#999">无匹配记录</td></tr>'}</tbody></table>`;
+    }
+
+    // —— ⑥ 新增：异常结果呈现（理赔/开查/索赔占比）+ 代理维度 ——
+    const abDom = inspecting.length;                       // 查验中
+    const abKai = kaicha.length;                           // 开查中
+    const abSuo = todayRecs.filter(r => r.isSuoPei).length; // 索赔中
+    const abLi = todayRecs.filter(r => r.isLiPei).length;   // 赔付/理赔
+    setOpt('ab-resultChart', {
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: { type: 'scroll', bottom: 0 },
+      series: [{ type: 'pie', radius: ['40%', '66%'], center: ['50%', '44%'], data: [
+        { name: '查验中', value: abDom, itemStyle: { color: '#2563eb' } },
+        { name: '开查中', value: abKai, itemStyle: { color: '#8b5cf6' } },
+        { name: '索赔中', value: abSuo, itemStyle: { color: '#ef4444' } },
+        { name: '赔付/理赔', value: abLi, itemStyle: { color: '#f59e0b' } }
+      ], label: { formatter: '{b}\n{c}' } }]
+    });
+    // 代理维度：异常票(宽口径) / 总票 / 异常率 / 其中赔付索赔开查
+    const agMap = {};
+    todayRecs.forEach(r => {
+      const a = r.agent || '未知';
+      if (!agMap[a]) agMap[a] = { total: 0, abn: 0, loss: 0 };
+      agMap[a].total++;
+      if (r.isAbnormal) agMap[a].abn++;
+      if (r.lossClaim) agMap[a].loss++;
+    });
+    const agArr = Object.entries(agMap).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.abn - a.abn).slice(0, 15);
+    const agTb = document.getElementById('ab-agentTable');
+    if (agTb) {
+      agTb.innerHTML = `<table class="data-table"><thead><tr><th>代理</th><th>总票</th><th>异常票</th><th>异常率</th><th>其中赔付/索赔/开查</th></tr></thead><tbody>` +
+        agArr.map(x => `<tr><td>${x.k}</td><td>${x.total}</td><td>${x.abn}</td><td class="${x.total ? (x.abn / x.total * 100 >= 10 ? 'rate-bad' : 'rate-mid') : ''}">${x.total ? (x.abn / x.total * 100).toFixed(1) + '%' : '—'}</td><td>${x.loss}</td></tr>`).join('') +
+        `</tbody></table>`;
     }
   }
 
@@ -840,12 +992,157 @@ const Daily = (function () {
     Object.values(chartMap).forEach(c => { if (c && !c.isDisposed()) { try { c.resize(); } catch (e) {} } });
   }
 
+  // ============================================================
+  // ⑦ 延误分析（沿用事业部口径）
+  // ============================================================
+  function renderDelayAnalysis() {
+    if (!todayRecs) { ['dl-kpis', 'dl-hist', 'dl-chan', 'dl-blank', 'dl-impactChart', 'dl-impactTable'].forEach(noData); return; }
+    const over = todayRecs.filter(r => r.overRefLead);   // 超参考时效未签收
+    const overDays = over.map(r => (r.shipDate ? dayDiff(TODAY, r.shipDate) : 0) - (r.refLead || 0)).filter(x => x > 0);
+    const avgOver = overDays.length ? overDays.reduce((a, b) => a + b, 0) / overDays.length : 0;
+    setKpiRow('dl-kpis', [
+      { num: over.length, label: '超参考时效未签收', sub: '在途且已超承诺时效', cls: 'ov-overdue' },
+      { num: over.length, label: '待填延误类型', sub: '监控无"延误类型"列，全部列为待跟进', cls: 'ov-new' },
+      { num: avgOver.toFixed(1) + '天', label: '平均超期天数', sub: '在途天数−参考时效', cls: 'ov-intransit' },
+      { num: todayRecs.filter(r => r.inTransit).length, label: '在途总票数', sub: '含未超期', cls: 'ov-abn' }
+    ]);
+    // 超期天数分布
+    const buckets = ['1-5', '6-10', '11-20', '21-30', '30+']; const cnt = [0, 0, 0, 0, 0];
+    overDays.forEach(d => { if (d <= 5) cnt[0]++; else if (d <= 10) cnt[1]++; else if (d <= 20) cnt[2]++; else if (d <= 30) cnt[3]++; else cnt[4]++; });
+    setOpt('dl-hist', { tooltip: { trigger: 'axis' }, grid: { left: 50, right: 20, top: 20, bottom: 40 }, xAxis: { type: 'category', data: buckets }, yAxis: { type: 'value', name: '票' }, series: [{ type: 'bar', data: cnt, itemStyle: { color: '#ef4444' } }] });
+    // 按渠道大类
+    const byCh = {}; over.forEach(r => { const k = r.channelCategory || r.logisticChannel || '未知'; byCh[k] = (byCh[k] || 0) + 1; });
+    const chArr = Object.entries(byCh).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    setOpt('dl-chan', { tooltip: { trigger: 'axis' }, grid: { left: 50, right: 20, top: 20, bottom: 60 }, xAxis: { type: 'category', data: chArr.map(x => x[0]), axisLabel: { interval: 0, rotate: 30, fontSize: 10 } }, yAxis: { type: 'value', name: '票' }, series: [{ type: 'bar', data: chArr.map(x => x[1]), itemStyle: { color: '#f59e0b' } }] });
+    // 明细清单（Top 80 by 超期天数）
+    const tb = document.getElementById('dl-blank');
+    if (tb) {
+      const list = over.map(r => ({ r, over: (r.shipDate ? dayDiff(TODAY, r.shipDate) : 0) - (r.refLead || 0) })).filter(x => x.over > 0).sort((a, b) => b.over - a.over).slice(0, 80);
+      tb.innerHTML = `<table class="data-table"><thead><tr><th>分出仓单号</th><th>客户(事业部)</th><th>渠道</th><th>代理</th><th>国家</th><th>出货日期</th><th>在途天数</th><th>参考时效</th><th>超期天数</th></tr></thead><tbody>` +
+        (list.length ? list.map(({ r, over }) => `<tr><td>${r.tickets.length > 1 ? r.tickets.slice(0, 2).join('<br>') : (r.tickets[0] || r.mainTicket)}</td><td>${r.customer}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.country}</td><td>${r.shipDate ? fmtDate(r.shipDate) : '—'}</td><td>${r.shipDate ? dayDiff(TODAY, r.shipDate) : '—'}</td><td>${r.refLead || '—'}</td><td class="rate-bad">${over}</td></tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:#999">无超时效在途单</td></tr>') +
+        `</tbody></table>`;
+    }
+    // 查验对延误的影响（仅已签收+含参考时效）
+    const signed = todayRecs.filter(r => !r.inTransit && r.refLead > 0 && r.transitDays > 0);
+    const dimOf = r => { if (r.domInsp && r.ovsInsp) return '国内+国外'; if (r.domInsp) return '仅起运港'; if (r.ovsInsp) return '仅目的港'; return '无查验'; };
+    const dims = ['无查验', '仅起运港', '仅目的港', '国内+国外'];
+    const stats = dims.map(dm => { const rs = signed.filter(r => dimOf(r) === dm); const n = rs.length; const at = n ? rs.reduce((a, b) => a + b.transitDays, 0) / n : 0; const ar = n ? rs.reduce((a, b) => a + b.refLead, 0) / n : 0; return { dm, n, at, ar, ex: at - ar }; });
+    const base = stats[0].ex;
+    const tb2 = document.getElementById('dl-impactTable');
+    if (tb2) tb2.innerHTML = `<table class="data-table"><thead><tr><th>查验维度</th><th>票数</th><th>平均全程时效</th><th>平均参考时效</th><th>平均超期</th><th>查验净拖累</th></tr></thead><tbody>` +
+      stats.map(s => `<tr><td>${s.dm}</td><td>${s.n}</td><td>${s.at.toFixed(1)}天</td><td>${s.ar.toFixed(1)}天</td><td class="${s.ex > 0 ? 'rate-bad' : 'rate-good'}">${s.ex >= 0 ? '+' : ''}${s.ex.toFixed(1)}天</td><td class="${(s.ex - base) > 0 ? 'rate-bad' : 'rate-good'};font-weight:600">${s.dm === '无查验' ? '基准' : ((s.ex - base) >= 0 ? '+' : '') + (s.ex - base).toFixed(1) + '天'}</td></tr>`).join('') +
+      `</tbody></table>`;
+    setOpt('dl-impactChart', { tooltip: { trigger: 'axis' }, legend: { data: ['平均全程时效(天)', '平均参考时效(天)'], bottom: 0 }, grid: { left: 50, right: 20, top: 20, bottom: 40 }, xAxis: { type: 'category', data: dims }, yAxis: { type: 'value', name: '天' }, series: [{ name: '平均全程时效(天)', type: 'bar', data: stats.map(s => +s.at.toFixed(1)), itemStyle: { color: '#ef4444' } }, { name: '平均参考时效(天)', type: 'bar', data: stats.map(s => +s.ar.toFixed(1)), itemStyle: { color: '#cbd5e1' } }] });
+  }
+
+  // ============================================================
+  // ⑧ 按查验发生日期口径的查验率统计
+  // ============================================================
+  function renderInspByDate() {
+    if (!todayRecs) { ['id-kpis', 'id-trend', 'id-table'].forEach(noData); return; }
+    const rows = todayRecs;
+    // 国内外查验以状态备注文本判定（对齐 chayan.js 真实口径，不依赖损坏的时长列）
+    const isDom = r => r.domInsp;   // 备注含"国内查验"
+    const isFor = r => r.ovsInsp;   // 备注含"国外查验"
+    const months = new Set();
+    let domTotal = 0, forTotal = 0, arrTotal = 0, shipTotal = 0;
+    rows.forEach(r => {
+      if (r.bizMonth && r.bizMonth !== '未知') { months.add(r.bizMonth); shipTotal++; if (isDom(r)) domTotal++; }
+      if (r.arrMonth) { months.add(r.arrMonth); arrTotal++; if (isFor(r)) forTotal++; }
+    });
+    const ms = [...months].sort();
+    // 口径：起运港查验率分母=仓库出货日期当月；目的港查验率分母=到港日期当月
+    const agg = ms.map(m => {
+      const shipped = rows.filter(r => r.bizMonth === m).length;
+      const arr = rows.filter(r => r.arrMonth === m).length;
+      const dom = rows.filter(r => r.domInsp && r.bizMonth === m).length;
+      const dest = rows.filter(r => r.ovsInsp && r.arrMonth === m).length;
+      return { m, shipped, arr, dom, dest, domRate: shipped ? +(dom / shipped * 100).toFixed(1) : null, ovsRate: arr ? +(dest / arr * 100).toFixed(1) : null };
+    });
+    setKpiRow('id-kpis', [
+      { num: domTotal, label: '国内(起运港)查验', sub: '备注含"国内查验"累计', cls: 'ov-intransit' },
+      { num: forTotal, label: '国外(目的港)查验', sub: '备注含"国外查验"累计', cls: 'ov-abn' },
+      { num: ms.length, label: '覆盖月份', sub: ms.length ? ms[0] + ' ~ ' + ms[ms.length - 1] : '—', cls: 'ov-new' },
+      { num: shipTotal, label: '有出货日期票', sub: '起运港分母口径', cls: 'ov-overdue' }
+    ]);
+    setOpt('id-trend', {
+      tooltip: { trigger: 'axis' }, legend: { data: ['起运港查验率%', '目的港查验率%'], bottom: 0 },
+      grid: { left: 50, right: 20, top: 20, bottom: 60 }, xAxis: { type: 'category', data: ms, axisLabel: { rotate: 30, fontSize: 10 } },
+      yAxis: { type: 'value', name: '%', max: 100 },
+      series: [
+        { name: '起运港查验率%', type: 'line', data: agg.map(a => a.domRate), smooth: true, connectNulls: true, itemStyle: { color: '#2563eb' } },
+        { name: '目的港查验率%', type: 'line', data: agg.map(a => a.ovsRate), smooth: true, connectNulls: true, itemStyle: { color: '#f59e0b' } }
+      ]
+    });
+    const tb = document.getElementById('id-table');
+    if (tb) tb.innerHTML = `<table class="data-table"><thead><tr><th>月份</th><th>出货票</th><th>国内查验</th><th>起运港率</th><th>到港票</th><th>国外查验</th><th>目的港率</th></tr></thead><tbody>` +
+      agg.map(a => `<tr><td>${a.m}</td><td>${a.shipped}</td><td>${a.dom}</td><td class="${a.domRate >= 5 ? 'rate-bad' : a.domRate >= 3 ? 'rate-mid' : 'rate-good'}">${a.domRate != null ? a.domRate + '%' : '—'}</td><td>${a.arr}</td><td>${a.dest}</td><td class="${a.ovsRate >= 5 ? 'rate-bad' : a.ovsRate >= 3 ? 'rate-mid' : 'rate-good'}">${a.ovsRate != null ? a.ovsRate + '%' : '—'}</td></tr>`).join('') +
+      `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${shipTotal}</td><td>${domTotal}</td><td>${shipTotal ? +(domTotal / shipTotal * 100).toFixed(1) + '%' : '—'}</td><td>${arrTotal}</td><td>${forTotal}</td><td>${arrTotal ? +(forTotal / arrTotal * 100).toFixed(1) + '%' : '—'}</td></tr></tbody></table>`;
+  }
+
+  // ============================================================
+  // ⑨ 美线海运时效对比
+  // ============================================================
+  const SHIPS = ['美森正班', '美森加班', '快船', '普船'];
+  const SHIP_TIER = { '美森正班': 0, '美森加班': 1, '快船': 2, '普船': 3 };
+  const SHIP_COLORS = ['#2563eb', '#f59e0b', '#8b5cf6', '#06b6d4'];
+  const DELIVS = ['卡派', '快递派'];
+  function renderUsOcean() {
+    if (!todayRecs) { ['us-kpis', 'us-trend', 'us-bar', 'us-table', 'us-tips'].forEach(noData); return; }
+    const base = todayRecs.filter(r => r.country === '美国' && r.shipType && r.deliveryType);
+    const signed = r => !r.inTransit && r.transitDays > 0;
+    const months = [...new Set(base.map(r => r.bizMonth))].filter(m => m && m !== '未知').sort();
+    const shipsPresent = SHIPS.filter(s => base.some(r => r.shipType === s));
+    setKpiRow('us-kpis', [{ num: base.length, label: '美线海运票', sub: '已识别船型+派送', cls: 'ov-intransit' }]
+      .concat(shipsPresent.map(s => ({ num: base.filter(r => r.shipType === s).length, label: s, cls: ['ov-intransit', 'ov-new', 'ov-abn', 'ov-overdue'][SHIP_TIER[s]] }))));
+    // 月度趋势（4 船型）
+    const dsTrend = shipsPresent.map(s => {
+      const col = SHIP_COLORS[SHIP_TIER[s]];
+      const data = months.map(m => { const rs = base.filter(r => r.shipType === s && r.bizMonth === m).filter(signed); return rs.length >= 5 ? +mean(transitOf(rs)).toFixed(1) : null; });
+      return { label: s, data, borderColor: col, backgroundColor: col + '22', smooth: true, connectNulls: true };
+    });
+    setOpt('us-trend', { tooltip: { trigger: 'axis' }, legend: { data: shipsPresent, bottom: 0 }, grid: { left: 50, right: 20, top: 20, bottom: 50 }, xAxis: { type: 'category', data: months, axisLabel: { rotate: 30, fontSize: 10 } }, yAxis: { type: 'value', name: '平均时效(天)' }, series: dsTrend });
+    // 船型 × 派送类型 分组柱
+    const dsBar = DELIVS.map((d, i) => ({ name: d, type: 'bar', data: shipsPresent.map(s => { const rs = base.filter(r => r.shipType === s && r.deliveryType === d).filter(signed); return rs.length >= 5 ? +mean(transitOf(rs)).toFixed(1) : null; }), itemStyle: { color: SHIP_COLORS[i] } }));
+    setOpt('us-bar', { tooltip: { trigger: 'axis' }, legend: { data: DELIVS, bottom: 0 }, grid: { left: 50, right: 20, top: 20, bottom: 40 }, xAxis: { type: 'category', data: shipsPresent }, yAxis: { type: 'value', name: '平均时效(天)' }, series: dsBar });
+    // 全景表：船型 × 派送类型
+    let rowsArr = [];
+    shipsPresent.forEach(s => DELIVS.forEach(d => {
+      const rs = base.filter(r => r.shipType === s && r.deliveryType === d);
+      if (!rs.length) return;
+      const tr = rs.filter(signed);
+      const va = rs.filter(r => r.refLead > 0);
+      const y = va.filter(r => r.onTime === '是').length;
+      rowsArr.push({ s, d, n: rs.length, avg: tr.length ? mean(transitOf(tr)) : 0, med: median(transitOf(tr)), rate: va.length ? (y / va.length * 100) : null });
+    }));
+    rowsArr.sort((a, b) => SHIP_TIER[a.s] - SHIP_TIER[b.s] || DELIVS.indexOf(a.d) - DELIVS.indexOf(b.d));
+    const tb = document.getElementById('us-table');
+    if (tb) tb.innerHTML = `<table class="data-table"><thead><tr><th>船型</th><th>派送类型</th><th>票数</th><th>平均时效(天)</th><th>中位时效(天)</th><th>时效达标率</th></tr></thead><tbody>` +
+      (rowsArr.length ? rowsArr.map(r => `<tr><td>${r.s}</td><td>${r.d}</td><td>${r.n}</td><td>${r.avg ? r.avg.toFixed(1) : '—'}</td><td>${r.med ? r.med.toFixed(1) : '—'}</td><td class="${r.rate >= 90 ? 'rate-good' : r.rate >= 80 ? 'rate-mid' : 'rate-bad'}">${r.rate != null ? r.rate.toFixed(1) + '%' : '—'}</td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:#999">无匹配（需国家=美国且渠道含海卡/海派+船型关键字）</td></tr>') +
+      `</tbody></table>`;
+    // 降档优化机会（时效差≤3天）
+    const tips = [];
+    DELIVS.forEach(d => {
+      const present = SHIPS.filter(s => { const rs = base.filter(r => r.shipType === s && r.deliveryType === d).filter(signed); return rs.length >= 30; });
+      present.forEach(sA => present.forEach(sB => {
+        if (SHIP_TIER[sA] < SHIP_TIER[sB]) {
+          const a = mean(transitOf(base.filter(r => r.shipType === sA && r.deliveryType === d).filter(signed)));
+          const b = mean(transitOf(base.filter(r => r.shipType === sB && r.deliveryType === d).filter(signed)));
+          const gap = Math.abs(a - b);
+          if (gap <= 3) tips.push(`【${d}】<b>${sA}</b> 均时效 ${a.toFixed(1)}天 ≈ <b>${sB}</b> ${b.toFixed(1)}天（仅差 ${gap.toFixed(1)}天）→ 可评估改走更便宜的 ${sB} 降运费`);
+        }
+      }));
+    });
+    document.getElementById('us-tips').innerHTML = tips.length ? tips.map(t => '• ' + t).join('<br>') : '当前筛选下各船型时效差均 &gt;3 天，暂无明显可降档空间（或样本不足）。';
+  }
+
   // ---------------- 对外接口 ----------------
   return {
     setData, setYesterday, init,
-    setCostDim, setCostMetric, setSlaPeriod,
+    setCostDim, setCostMetric, setSlaPeriod, setSlaDim,
     setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
+    renderDelayAnalysis, renderInspByDate, renderUsOcean,
     getShareCharts, resizeAllCharts
   };
 })();
