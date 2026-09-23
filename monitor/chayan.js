@@ -2715,8 +2715,14 @@ function switchTab(tabName) {
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', () => {
+  // 数据加载完成后，对当前激活的 Tab 补一次渲染（加载流程只渲染 chayan 周度标签页，
+  // 日度监控面板需经 switchTab 才渲染；否则默认 d_overview 首屏空白）
+  const afterDataLoad = () => {
+    const ab = document.querySelector('.tab-btn.active');
+    if (ab && ab.dataset.tab) switchTab(ab.dataset.tab);
+  };
   // 优先尝试从分享链接加载（领导免上传）；加载失败则自动从 data.json 加载（每日17点脚本生成）
   tryLoadFromHash().then(ok => {
-    if (!ok) { initEvents(); loadFromServer(); }
-  }).catch(() => { initEvents(); loadFromServer(); });
+    if (!ok) { initEvents(); loadFromServer().then(afterDataLoad).catch(() => {}); }
+  }).catch(() => { initEvents(); loadFromServer().then(afterDataLoad).catch(() => {}); });
 });
