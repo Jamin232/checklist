@@ -99,6 +99,39 @@ def find_sheet(wb):
     return wb.sheetnames[0]
 
 
+def parse_file_date(name):
+    """从文件名解析基准日：用户口径 = 跟踪表文件名是哪天，基准日就是哪天。
+
+    支持格式（按优先级）：
+      1) 8 位连续数字  → YYYYMMDD（如 20260922）
+      2) YYYY-MM-DD / YYYY.MM.DD / YYYY_MM_DD
+      3) 4 位连续数字  → 优先当 MMDD（如 0922 → 当年9月22日）
+    解析不到合法日期返回 ''（调用方回退到仓库出货最大日）。
+    """
+    import re
+    base = os.path.splitext(name)[0]
+    # 1) 8 位连续数字 → YYYYMMDD
+    m = re.search(r"(20\d{2})(\d{2})(\d{2})", base)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return "%04d-%02d-%02d" % (y, mo, d)
+    # 2) YYYY-MM-DD / YYYY.MM.DD / YYYY_MM_DD
+    m = re.search(r"(20\d{2})[-._](\d{1,2})[-._](\d{1,2})", base)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return "%04d-%02d-%02d" % (y, mo, d)
+    # 3) 4 位连续数字 → 优先 MMDD（月须合法），年份取当前年
+    m = re.search(r"(?<!\d)(\d{4})(?!\d)", base)
+    if m:
+        s = m.group(1)
+        a, b = int(s[:2]), int(s[2:])
+        if 1 <= a <= 12 and 1 <= b <= 31:
+            return "%04d-%02d-%02d" % (datetime.date.today().year, a, b)
+    return ""
+
+
 # 看板实际引用的列（chayan.js / daily.js 经字面量+find() 映射全量核对，2026-09-22）。
 # 仅输出这些列即可：跟踪表其余 56 列（含 __col 空列）均为冗余，可省约 65% 体积。
 # 注意：若后续新增看板列，必须同步把对应表头加入此名单，否则该列会被丢弃。
@@ -171,12 +204,17 @@ def build(excel_path, output_path):
 
     wb.close()
 
+    # 数据基准日：用户口径 = 跟踪表文件名是哪天，基准日就是哪天。
+    # 优先取文件名日期；解析不到时回退到「仓库出货日期」列最大日。
+    file_date = parse_file_date(os.path.basename(excel_path))
+    data_date = file_date or (max_ship.strftime("%Y-%m-%d") if max_ship else "")
     meta = {
         "sourceFile": os.path.basename(excel_path),
         "sheet": sheet,
         "generatedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "rowCount": len(records),
-        "dataDate": max_ship.strftime("%Y-%m-%d") if max_ship else "",
+        "dataDate": data_date,
+        "maxShipDate": max_ship.strftime("%Y-%m-%d") if max_ship else "",
     }
     out = {"meta": meta, "rows": records}
     with open(output_path, "w", encoding="utf-8") as f:

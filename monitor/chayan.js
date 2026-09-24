@@ -1084,7 +1084,7 @@ async function loadAndProcessRows(rows, meta) {
     records = res.records;
     maxShipDate = res.maxDate;
     // 注入原始行给日度监控看板（单表快照：不传昨日对比；TODAY 取真实今日）
-    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData, null);
+    if (typeof Daily !== 'undefined' && Daily.setData) Daily.setData(rawData, null, dataMeta.dataDate);
     if (res.skippedNoDate > 0) {
       showToast(`⚠️ 有 ${res.skippedNoDate} 行因缺少或无法识别「仓库出货日期」，未参与周度趋势统计（请检查日期格式，如 2026年7月21日、21/07/2026）。`, 'warn');
     } else {

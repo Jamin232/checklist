@@ -16,6 +16,7 @@ const Daily = (function () {
   let slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
 
   let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
+  let dataBaseDate = ''; // 数据基准日（来自 data.json meta.dataDate = 跟踪表文件名日期），仅作展示
   function computeToday(date) {
     let base;
     if (date && !isNaN(date.getTime())) {
@@ -298,9 +299,11 @@ const Daily = (function () {
 
   // ---------------- 数据注入 ----------------
   // date: 由文件名解析出的日期(Date|null)，用于推导 TODAY（当日新增查验 / 明日预警的基准）
-  function setData(rawRows, date) {
+  // baseDateStr: data.json meta.dataDate（跟踪表文件名日期，如 '2026-09-22'），仅用于总览展示
+  function setData(rawRows, date, baseDateStr) {
     computeToday(date);
     todayDate = date || null;
+    dataBaseDate = baseDateStr || (date ? fmtDate(date) : '');
     todayRecs = parseDailyRows(rawRows || []);
   }
   // 昨日表：由 chayan.js 读取后注入（支持多文件按文件名日期自动区分今日/昨日）
@@ -441,7 +444,7 @@ const Daily = (function () {
     }
 
     // 昨日对比（异常相关）
-    let extra = `<div class="ov-note">数据基准日：${fmtDate(TODAY)} ｜ 在途定义：实际签收时间为空即视为在途（含赔付中/索赔中/开查中未签收单）。</div>`;
+    let extra = `<div class="ov-note">数据基准日：${dataBaseDate || fmtDate(TODAY)} ｜ 在途定义：实际签收时间为空即视为在途（含赔付中/索赔中/开查中未签收单）。</div>`;
     if (yesterdayRecs) {
       const t = dailyMetrics(todayRecs, TODAY), y = dailyMetrics(yesterdayRecs, yesterdayDate || TODAY);
       const dIns = t.inspecting - y.inspecting;
