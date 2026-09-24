@@ -501,6 +501,10 @@ function buildColMap(rows) {
     ship: findCol(rows[0], '仓库出货日期'),
     domInspect: findCol(rows[0], '国内', '查验'),
     destInspect: findCol(rows[0], '目的地', '查验'),
+    domStart: findCol(rows[0], '国内开始查验时间'),
+    destStart: findCol(rows[0], '国外开始查验时间'),
+    domEnd: findCol(rows[0], '国内查验完成时间'),
+    destEnd: findCol(rows[0], '国外查验完成时间'),
   };
 }
 
@@ -589,11 +593,13 @@ function processData(rows) {
     let isDomestic = remark.includes('国内查验');
     let isForeign = remark.includes('国外查验');
 
-    // 补充判定：若状态备注未标记但时间列有值（日期/数字），仍视为查验
+    // 补充判定：若状态备注未标记，但「原查验时间列」有值 或 新增「开始查验时间」字段有值，仍视为发生查验
     const destInspectTimeRaw = safeStr(row[map.destInspect]);
     const domInspectTimeRaw = safeStr(row[map.domInspect]);
-    if (!isDomestic && domInspectTimeRaw.trim() !== '') isDomestic = true;
-    if (!isForeign && destInspectTimeRaw.trim() !== '') isForeign = true;
+    const domStartRaw = safeStr(row[map.domStart]);
+    const destStartRaw = safeStr(row[map.destStart]);
+    if (!isDomestic && (domInspectTimeRaw.trim() !== '' || domStartRaw.trim() !== '')) isDomestic = true;
+    if (!isForeign && (destInspectTimeRaw.trim() !== '' || destStartRaw.trim() !== '')) isForeign = true;
 
     const isInspected = isDomestic || isForeign;
 
@@ -627,9 +633,15 @@ function processData(rows) {
       skippedNoDate++;
     }
 
-    // 查验时效（BI/BJ列，数值型为天数）
-    const destInspectTime = safeNum(row[map.destInspect]);
-    const domInspectTime = safeNum(row[map.domInspect]);
+    // 查验时效：优先用新增「开始→完成」字段计算真实天数；缺失时回退原「查验时间」列数值
+    const domStartD = parseDate(row[map.domStart]);
+    const destStartD = parseDate(row[map.destStart]);
+    const domEndD = parseDate(row[map.domEnd]);
+    const destEndD = parseDate(row[map.destEnd]);
+    const realDomDays = (domStartD && domEndD) ? Math.max(0, Math.round((domEndD - domStartD) / 86400000)) : 0;
+    const realDestDays = (destStartD && destEndD) ? Math.max(0, Math.round((destEndD - destStartD) / 86400000)) : 0;
+    const destInspectTime = realDestDays || safeNum(row[map.destInspect]);
+    const domInspectTime = realDomDays || safeNum(row[map.domInspect]);
     const avgInspectTime = (destInspectTime > 0 && domInspectTime > 0)
       ? (destInspectTime + domInspectTime) / 2
       : (destInspectTime > 0 ? destInspectTime : (domInspectTime > 0 ? domInspectTime : 0));

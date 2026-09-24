@@ -253,6 +253,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .cost-dim-btn,.cost-metric-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
 .cost-dim-btn.active,.cost-metric-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
 .cost-sep{width:1px;height:18px;background:#ddd;margin:0 4px}
+.cost-bar select{padding:4px 8px;border-radius:12px;border:0.5px solid #ddd;font-size:12px;background:#fff;color:#333;outline:none}
+.cost-reset-btn{padding:4px 10px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;border:0.5px solid transparent;cursor:pointer}
+.cost-reset-btn:hover{background:#e8f7ef;color:var(--primary-dark)}
 
 /* 占比百分比 */
 .pct{font-size:10px;color:#aaa}
