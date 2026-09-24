@@ -204,6 +204,7 @@ const Daily = (function () {
       agent: find('代理'),
       agentCh: find('代理渠道'),
       cust: find('客户'),
+      store: find('店铺名'),
       prod: find('产品属性'),
       country: find('国家'),
       weight: find('毛重'),
@@ -303,6 +304,7 @@ const Daily = (function () {
         agent: safeStr(row[map.agent]),
         agentChannel: safeStr(row[map.agentCh]),
         customer: safeStr(row[map.cust]),
+        store: safeStr(row[map.store]),
         productAttr: safeStr(row[map.prod]),
         country: safeStr(row[map.country]),
         weight: safeNum(row[map.weight]),
@@ -1258,9 +1260,56 @@ const Daily = (function () {
   // ============================================================
   // ⑧ 按查验发生日期口径的查验率统计
   // ============================================================
+  let inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+  function setInspFilter(key, val) {
+    if (inspFilters.hasOwnProperty(key)) inspFilters[key] = val || '';
+    renderInspByDate();
+  }
+  function resetInspFilters() {
+    inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['idFilterCustomer', 'idFilterChannel', 'idFilterAgent', 'idFilterCountry', 'idFilterTransport', 'idFilterCat', 'idFilterMonth', 'idFilterStore'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderInspByDate();
+  }
+  function buildInspFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('idFilterCustomer', unique(r => r.customer));
+    fill('idFilterChannel', unique(r => r.channelCategory));
+    fill('idFilterAgent', unique(r => r.agent));
+    fill('idFilterCountry', unique(r => r.country));
+    fill('idFilterTransport', unique(r => r.transport));
+    fill('idFilterCat', unique(r => r.channelCategory));
+    fill('idFilterMonth', unique(r => r.bizMonth));
+    fill('idFilterStore', unique(r => r.store));
+  }
+  function applyInspFilters(pool) {
+    buildInspFilterOptions();
+    return pool.filter(r => {
+      if (inspFilters.customer && r.customer !== inspFilters.customer) return false;
+      if (inspFilters.channel && r.channelCategory !== inspFilters.channel) return false;
+      if (inspFilters.agent && r.agent !== inspFilters.agent) return false;
+      if (inspFilters.country && r.country !== inspFilters.country) return false;
+      if (inspFilters.transport && r.transport !== inspFilters.transport) return false;
+      if (inspFilters.cat && r.channelCategory !== inspFilters.cat) return false;
+      if (inspFilters.month && r.bizMonth !== inspFilters.month) return false;
+      if (inspFilters.store && r.store !== inspFilters.store) return false;
+      return true;
+    });
+  }
+
   function renderInspByDate() {
     if (!todayRecs) { ['id-kpis', 'id-trend', 'id-table'].forEach(noData); return; }
-    const rows = todayRecs;
+    const rows = applyInspFilters(todayRecs);
     // 查验发生判定：备注含"国内/国外查验" 或 新增「开始查验时间」字段有值（parseDailyRows 已统一写入 domInsp/ovsInsp）
     const isDom = r => r.domInsp;
     const isFor = r => r.ovsInsp;
@@ -1370,6 +1419,7 @@ const Daily = (function () {
     setCostDim, setCostMetric, setCostCustomer, resetCostCustomer, setSlaPeriod, setSlaDim, resetSlaDim, setSlaFilter, resetSlaFilters, buildSlaFilterOptions,
     setIntransitFilter, resetIntransitFilters,
     setDelayFilter, resetDelayFilters,
+    setInspFilter, resetInspFilters, buildInspFilterOptions,
     setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
     renderDelayAnalysis, renderInspByDate, renderUsOcean,
