@@ -13,6 +13,7 @@ const Daily = (function () {
   let _inited = false;
   let slaPeriod = 'all'; // 'all' | 'halfmonth' | 'month' | 'twomonth'
   let slaDim = 'channel'; // 'channel' | 'agent' | 'customer' | 'logistic' | 'transport' | 'cat' | 'month'
+  let slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
 
   let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
   function computeToday(date) {
@@ -581,6 +582,37 @@ const Daily = (function () {
   }
   function resetSlaDim() { setSlaDim('channel'); }
 
+  function setSlaFilter(key, val) {
+    if (slaFilters.hasOwnProperty(key)) slaFilters[key] = val || '';
+    renderSLA();
+  }
+  function resetSlaFilters() {
+    slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+    ['slaFilterCustomer', 'slaFilterChannel', 'slaFilterAgent', 'slaFilterCountry', 'slaFilterTransport', 'slaFilterCat', 'slaFilterMonth'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderSLA();
+  }
+  function buildSlaFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('slaFilterCustomer', unique(r => r.customer));
+    fill('slaFilterChannel', unique(r => r.channelCategory));
+    fill('slaFilterAgent', unique(r => r.agent));
+    fill('slaFilterCountry', unique(r => r.country));
+    fill('slaFilterTransport', unique(r => r.transport));
+    fill('slaFilterCat', unique(r => r.channelCategory));
+    fill('slaFilterMonth', unique(r => r.bizMonth));
+  }
+
   function slaKeyFn(r) {
     switch (slaDim) {
       case 'agent': return r.agent || '未知';
@@ -603,6 +635,18 @@ const Daily = (function () {
       cutoff.setUTCDate(cutoff.getUTCDate() - days);
       pool = todayRecs.filter(r => r.shipDate && r.shipDate >= cutoff);
     }
+    // 多维度筛选（事业部看板风格 + 代理维度）
+    buildSlaFilterOptions();
+    pool = pool.filter(r => {
+      if (slaFilters.customer && r.customer !== slaFilters.customer) return false;
+      if (slaFilters.channel && r.channelCategory !== slaFilters.channel) return false;
+      if (slaFilters.agent && r.agent !== slaFilters.agent) return false;
+      if (slaFilters.country && r.country !== slaFilters.country) return false;
+      if (slaFilters.transport && r.transport !== slaFilters.transport) return false;
+      if (slaFilters.cat && r.channelCategory !== slaFilters.cat) return false;
+      if (slaFilters.month && r.bizMonth !== slaFilters.month) return false;
+      return true;
+    });
     // 时效SLA基线：仅剔除"查验相关"订单（状态查验中/备注含查验/查验时间有值）；开查中、索赔赔付保留
     const normalSigned = pool.filter(r => !r.inTransit && !isSlaAbnormal(r) && r.shipDate && r.signTime);
     const byCh = {};
@@ -644,10 +688,12 @@ const Daily = (function () {
     });
 
     // 表格
+    const dimNames = { channel: '渠道大类', agent: '代理', customer: '事业部', logistic: '素芸渠道', transport: '运输方式', cat: '国家+类型', month: '月份' };
+    const dimName = dimNames[slaDim] || '维度';
     const tb = document.getElementById('sla-table');
     if (tb) {
       const dimLabel = slaPeriod === 'all' ? '全量' : { halfmonth: '近半月', month: '近一月', twomonth: '近两月' }[slaPeriod];
-      tb.innerHTML = `<tr><th>渠道大类</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
+      tb.innerHTML = `<tr><th>${dimName}</th><th>正常已签收</th><th>平均实际时效</th><th>建议时效*</th><th>参考时效(Z)</th><th>超时单数</th><th>SLA达成率</th></tr>` +
         arr.map(x => {
           const rc = x.rate >= 90 ? 'rate-good' : (x.rate >= 80 ? 'rate-mid' : 'rate-bad');
           return `<tr><td>${x.key}</td><td>${x.n}${x.small ? '<span class="pct">样本少</span>' : ''}</td><td>${x.avgLead.toFixed(1)}</td><td><b>${x.suggested.toFixed(1)}</b></td><td>${x.refAvg ? x.refAvg : '-'}</td><td class="rate-bad">${x.over}</td><td class="${rc}">${x.rate.toFixed(1)}%</td></tr>`;
@@ -1146,7 +1192,7 @@ const Daily = (function () {
   // ---------------- 对外接口 ----------------
   return {
     setData, setYesterday, init,
-    setCostDim, setCostMetric, setSlaPeriod, setSlaDim, resetSlaDim,
+    setCostDim, setCostMetric, setSlaPeriod, setSlaDim, resetSlaDim, setSlaFilter, resetSlaFilters, buildSlaFilterOptions,
     setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
     renderDelayAnalysis, renderInspByDate, renderUsOcean,

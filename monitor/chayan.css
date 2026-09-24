@@ -286,6 +286,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 .sla-note-label{font-size:12px;color:#888;font-weight:500}
 .sla-period-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
 .sla-period-btn.active{background:#e8f7ef;color:var(--primary-dark);font-weight:600;border-color:#b2e5c9}
+.sla-filterbar{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
+.sla-filterbar label{font-size:12px;color:#6b7280;display:flex;flex-direction:column;gap:3px}
+.sla-filterbar select{padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;color:#1f2937;min-width:120px;cursor:pointer}
+.sla-filterbar select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.12)}
+.sla-filterbar .reset{margin-left:auto;padding:5px 12px;border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;cursor:pointer;font-size:12px;color:#374151}
+.sla-filterbar .reset:hover{background:#f1f5f9;border-color:#d1d5db}
 .sla-dim-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border-bottom:0.5px solid #f0f0f0;flex-wrap:wrap}
 .sla-dim-btn{padding:4px 12px;border-radius:12px;font-size:12px;background:#f0f0f0;color:#555;cursor:pointer;transition:all .15s;border:0.5px solid transparent}
 .sla-dim-btn.active{background:#e6f0ff;color:var(--primary-dark);font-weight:600;border-color:#a9ccff}
