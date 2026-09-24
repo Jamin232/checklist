@@ -8,7 +8,7 @@
 <!-- 全部加 defer：并行下载、HTML 先解析完、UI 先出来，脚本在 DOM 准备好后按序执行 -->
 <script defer src="xlsx.full.min.js?v=0.20.1"></script>
 <script defer src="echarts.min.js?v=5.5.0"></script>
-<link rel="stylesheet" href="chayan.css?v=20260924c">
+<link rel="stylesheet" href="chayan.css?v=20260924d">
 </head>
 <body>
 <div class="app">
@@ -411,6 +411,16 @@
 
         <!-- ===== 日度监控：在途概览 ===== -->
         <div id="pane-d_intransit" class="tab-pane">
+          <div class="sla-filterbar">
+            <label>事业部<select id="itFilterCustomer" onchange="Daily.setIntransitFilter('customer', this.value)"><option value="">全部</option></select></label>
+            <label>渠道大类<select id="itFilterChannel" onchange="Daily.setIntransitFilter('channel', this.value)"><option value="">全部</option></select></label>
+            <label>代理<select id="itFilterAgent" onchange="Daily.setIntransitFilter('agent', this.value)"><option value="">全部</option></select></label>
+            <label>国家<select id="itFilterCountry" onchange="Daily.setIntransitFilter('country', this.value)"><option value="">全部</option></select></label>
+            <label>运输方式<select id="itFilterTransport" onchange="Daily.setIntransitFilter('transport', this.value)"><option value="">全部</option></select></label>
+            <label>国家+类型<select id="itFilterCat" onchange="Daily.setIntransitFilter('cat', this.value)"><option value="">全部</option></select></label>
+            <label>月份<select id="itFilterMonth" onchange="Daily.setIntransitFilter('month', this.value)"><option value="">全部</option></select></label>
+            <button class="reset" onclick="Daily.resetIntransitFilters()">重置筛选</button>
+          </div>
           <div class="section">
             <div class="section-header">
               <div class="section-title">🚢 在途运输方式构成</div>
@@ -429,10 +439,6 @@
           <div class="section">
             <div class="section-header"><div class="section-title">👤 在途 · 按客户</div></div>
             <div class="table-wrap"><table class="data-table" id="it-custBody"></table></div>
-          </div>
-          <div class="section">
-            <div class="section-header"><div class="section-title">⏰ 超时票数（超参考时效 · 按素芸物流渠道）</div><span class="section-note">在途且实际在途天数已超参考时效</span></div>
-            <div class="chart-container" id="it-overdueChart"></div>
           </div>
           <div class="section">
             <div class="section-header"><div class="section-title">📊 在途账龄分布（出货→今天）</div><span class="section-note">账龄越长=占用越多、断货风险越高，30天以上重点跟进</span></div>
@@ -554,6 +560,16 @@
 
         <!-- ===== 日度监控：延误分析 ===== -->
         <div id="pane-d_delay" class="tab-pane">
+          <div class="sla-filterbar">
+            <label>事业部<select id="dlFilterCustomer" onchange="Daily.setDelayFilter('customer', this.value)"><option value="">全部</option></select></label>
+            <label>渠道大类<select id="dlFilterChannel" onchange="Daily.setDelayFilter('channel', this.value)"><option value="">全部</option></select></label>
+            <label>代理<select id="dlFilterAgent" onchange="Daily.setDelayFilter('agent', this.value)"><option value="">全部</option></select></label>
+            <label>国家<select id="dlFilterCountry" onchange="Daily.setDelayFilter('country', this.value)"><option value="">全部</option></select></label>
+            <label>运输方式<select id="dlFilterTransport" onchange="Daily.setDelayFilter('transport', this.value)"><option value="">全部</option></select></label>
+            <label>国家+类型<select id="dlFilterCat" onchange="Daily.setDelayFilter('cat', this.value)"><option value="">全部</option></select></label>
+            <label>月份<select id="dlFilterMonth" onchange="Daily.setDelayFilter('month', this.value)"><option value="">全部</option></select></label>
+            <button class="reset" onclick="Daily.resetDelayFilters()">重置筛选</button>
+          </div>
           <div class="kpi-row" id="dl-kpis"></div>
           <div class="grid2" style="padding:0 10px 12px">
             <div class="section">
@@ -627,8 +643,8 @@
   <div class="loading-text">数据处理中...</div>
 </div>
 
-<script defer src="chayan.js?v=20260924c"></script>
-<script defer src="daily.js?v=20260924c"></script>
+<script defer src="chayan.js?v=20260924d"></script>
+<script defer src="daily.js?v=20260924d"></script>
 <script>
 // 初始化日期显示
 (function(){

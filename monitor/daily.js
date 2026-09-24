@@ -196,6 +196,8 @@ const Daily = (function () {
       destStart: find('国外开始查验时间'),
       domEnd: find('国内查验完成时间'),
       destEnd: find('国外查验完成时间'),
+      domDuration: find('国内查验时长'),
+      destDuration: find('国外查验时长'),
       main: find('主出仓单号'),
       type: find('类型'),
       logi: find('素芸物流渠道'),
@@ -208,8 +210,7 @@ const Daily = (function () {
       vol: find('方数CBM'),
       ref: find('参考时效'),
       arr: find('到港日期'),
-      pay: find('赔付'),
-      late: find('物流最晚送达时间')
+      pay: find('赔付')
     };
   }
   function parseDailyRows(rows) {
@@ -230,20 +231,39 @@ const Daily = (function () {
       const shipDate = parseDate(row[map.ship]);
       const goodsStatus = safeStr(row[map.status]);
       const remark = safeStr(row[map.remark]);
-      // 新增字段：人工维护的查验起止日期（更可靠，优先使用）
-      const domInspectStart = parseDate(row[map.domStart]);
-      const destInspectStart = parseDate(row[map.destStart]);
+      // 新增/旧版查验字段：日期型=开始/完成时间；时长型=已持续天数（双轨兜底）
+      const domInspectStartNew = parseDate(row[map.domStart]);
+      const destInspectStartNew = parseDate(row[map.destStart]);
       const domInspectEnd = parseDate(row[map.domEnd]);
       const destInspectEnd = parseDate(row[map.destEnd]);
-      // 国内外查验判定：状态备注含"国内/国外查验" 或 新增「开始查验时间」有日期，都算发生查验
-      const isDomInsp = remark.includes('国内查验') || !!domInspectStart;
-      const isForeignInsp = remark.includes('国外查验') || !!destInspectStart;
-      // 查验发生日期：优先取新增「开始查验时间」字段；无则尝试从备注提取（兜底）
-      const domInspectDate = domInspectStart || extractInspectDate(remark, '国内查验');
-      const destInspectDate = destInspectStart || extractInspectDate(remark, '国外查验');
+      const domDuration = safeNum(row[map.domDuration]);
+      const destDuration = safeNum(row[map.destDuration]);
+      // 旧版「国内查验时间/目的地查验时间」在 data.json 中常为日期序列号，也作为开始时间兜底
+      const domInspectStartOld = parseDate(row[map.dom]);
+      const destInspectStartOld = parseDate(row[map.dest]);
 
-      // 海关查验判定：货物状态含"查验中" 或 新增「开始查验时间」有值且未放行（无完成时间）
-      const isInspecting = goodsStatus.includes('查验中') || (!!domInspectStart && !domInspectEnd) || (!!destInspectStart && !destInspectEnd);
+      // 从货物状态文本提取查验日期（如 "9/16查验中"），作为发生日期兜底
+      const statusInspectDate = goodsStatus.includes('查验') ? parseDateFromStatus(goodsStatus) : null;
+      // 备注中同时出现 "国内"+"查验" / "国外/目的地"+"查验" 即判定为该侧发生查验
+      const hasDomKeyword = /国内/.test(remark) && /查验/.test(remark);
+      const hasDestKeyword = /国外|目的地/.test(remark) && /查验/.test(remark);
+
+      // 国内外查验判定：关键词 / 开始时间 / 时长 任一有值
+      const isDomInsp = hasDomKeyword || !!domInspectStartNew || !!domInspectStartOld || domDuration > 0;
+      const isForeignInsp = hasDestKeyword || !!destInspectStartNew || !!destInspectStartOld || destDuration > 0;
+
+      // 查验发生日期：优先新字段 > 旧日期字段 > 状态文本日期（按备注关键词归侧） > 备注文本提取
+      let domInspectDate = domInspectStartNew || domInspectStartOld || extractInspectDate(remark, '国内查验');
+      let destInspectDate = destInspectStartNew || destInspectStartOld || extractInspectDate(remark, '国外查验');
+      if (statusInspectDate) {
+        if (!domInspectDate && (hasDomKeyword || (!hasDomKeyword && !hasDestKeyword))) domInspectDate = statusInspectDate;
+        if (!destInspectDate && hasDestKeyword) destInspectDate = statusInspectDate;
+      }
+
+      // 海关查验判定：货物状态含"查验中" 或 有开始时间且未放行
+      const isInspecting = goodsStatus.includes('查验中') ||
+        (!!domInspectDate && !domInspectEnd) ||
+        (!!destInspectDate && !destInspectEnd);
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w)) || isInspecting;
 
       // —— 派生字段（支撑 SLA多维 / 异常代理维度 / 延误分析 / 查验日期口径 / 美线海运 等模块）——
@@ -295,6 +315,7 @@ const Daily = (function () {
         remark,
         domInspectDate, destInspectDate,
         domInspectEnd, destInspectEnd,
+        domInspectDuration: domDuration, destInspectDuration: destDuration,
         inTransit: intransit,
         isInspecting,
         isAbnormal,
@@ -485,9 +506,55 @@ const Daily = (function () {
   // ============================================================
   // ② 在途概览
   // ============================================================
+  let itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+  function setIntransitFilter(key, val) {
+    if (itFilters.hasOwnProperty(key)) itFilters[key] = val || '';
+    renderIntransit();
+  }
+  function resetIntransitFilters() {
+    itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+    ['itFilterCustomer', 'itFilterChannel', 'itFilterAgent', 'itFilterCountry', 'itFilterTransport', 'itFilterCat', 'itFilterMonth'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderIntransit();
+  }
+  function buildIntransitFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('itFilterCustomer', unique(r => r.customer));
+    fill('itFilterChannel', unique(r => r.channelCategory));
+    fill('itFilterAgent', unique(r => r.agent));
+    fill('itFilterCountry', unique(r => r.country));
+    fill('itFilterTransport', unique(r => r.transport));
+    fill('itFilterCat', unique(r => r.channelCategory));
+    fill('itFilterMonth', unique(r => r.bizMonth));
+  }
+  function applyIntransitFilters(pool) {
+    buildIntransitFilterOptions();
+    return pool.filter(r => {
+      if (itFilters.customer && r.customer !== itFilters.customer) return false;
+      if (itFilters.channel && r.channelCategory !== itFilters.channel) return false;
+      if (itFilters.agent && r.agent !== itFilters.agent) return false;
+      if (itFilters.country && r.country !== itFilters.country) return false;
+      if (itFilters.transport && r.transport !== itFilters.transport) return false;
+      if (itFilters.cat && r.channelCategory !== itFilters.cat) return false;
+      if (itFilters.month && r.bizMonth !== itFilters.month) return false;
+      return true;
+    });
+  }
+
   function renderIntransit() {
     if (!todayRecs) { noData('it-transitChart'); noData('it-channelBody'); noData('it-agentBody'); noData('it-custBody'); return; }
-    const inTransit = todayRecs.filter(r => r.inTransit);
+    let inTransit = todayRecs.filter(r => r.inTransit);
+    inTransit = applyIntransitFilters(inTransit);
 
     // 运输方式构成（饼图）
     const byType = sortByTickets(groupSum(inTransit, r => r.type || '未知'));
@@ -499,24 +566,11 @@ const Daily = (function () {
     });
 
     renderTable('it-channelBody', groupSum(inTransit, r => r.logisticChannel), '素芸物流渠道');
-    renderTable('it-agentBody', groupSum(inTransit, r => r.agent), '代理');
+    renderAgentTable('it-agentBody', inTransit);
     renderTable('it-custBody', groupSum(inTransit, r => r.customer), '客户');
 
-    // —— ④ 新增：超时(超参考时效) by 渠道 + 在途账龄分布 + 未完成已超时效清单 ——
+    // 账龄分布 + 未完成已超时效清单
     const overList = inTransit.filter(r => r.overRefLead);
-    const byChOver = {};
-    overList.forEach(r => { const k = r.logisticChannel || '未知'; byChOver[k] = (byChOver[k] || 0) + 1; });
-    const chOver = Object.entries(byChOver).sort((a, b) => b[1] - a[1]).slice(0, 12);
-    setOpt('it-overdueChart', {
-      tooltip: { trigger: 'axis' }, legend: { data: ['超参考时效票', '在途票'], bottom: 0 },
-      grid: { left: 50, right: 20, top: 20, bottom: 60 }, xAxis: { type: 'category', data: chOver.map(x => x[0]), axisLabel: { interval: 0, rotate: 30, fontSize: 10 } },
-      yAxis: { type: 'value', name: '票' },
-      series: [
-        { name: '超参考时效票', type: 'bar', data: chOver.map(x => x[1]), itemStyle: { color: '#ef4444' } },
-        { name: '在途票', type: 'bar', data: chOver.map(x => inTransit.filter(r => r.logisticChannel === x[0]).length), itemStyle: { color: '#cbd5e1' } }
-      ]
-    });
-    // 账龄分布（出货→今天）
     const ages = inTransit.map(r => r.shipDate ? dayDiff(TODAY, r.shipDate) : 0).filter(x => x > 0);
     const ageBuckets = ['0-15', '15-30', '30-45', '45-60', '60+']; const ageCnt = [0, 0, 0, 0, 0];
     ages.forEach(a => { if (a <= 15) ageCnt[0]++; else if (a <= 30) ageCnt[1]++; else if (a <= 45) ageCnt[2]++; else if (a <= 60) ageCnt[3]++; else ageCnt[4]++; });
@@ -547,11 +601,29 @@ const Daily = (function () {
   function renderTable(tbodyId, grouped, dimLabel) {
     const el = document.getElementById(tbodyId);
     if (!el) return;
-    const arr = sortByTickets(grouped).slice(0, 60);
-    const tot = arr.reduce((s, x) => s + x.tickets, 0) || 1;
+    const full = sortByTickets(grouped);
+    const tot = full.reduce((s, x) => s + x.tickets, 0) || 1;
+    const arr = full.slice(0, 60);
     el.innerHTML = `<tr><th>${dimLabel}</th><th>在途票数</th><th>占比</th><th>吨数</th><th>方数</th></tr>` +
       arr.map(x => `<tr><td>${x.key || '—'}</td><td>${x.tickets}</td><td>${(x.tickets / tot * 100).toFixed(1)}%</td><td>${(x.weight / 1000).toFixed(1)}</td><td>${x.volume.toFixed(1)}</td></tr>`).join('') +
       (arr.length === 0 ? '<tr><td colspan="5" style="text-align:center;color:#999">无数据</td></tr>' : '');
+  }
+  function renderAgentTable(tbodyId, pool) {
+    const el = document.getElementById(tbodyId);
+    if (!el) return;
+    const grouped = groupSum(pool, r => r.agent);
+    const full = sortByTickets(grouped);
+    const tot = full.reduce((s, x) => s + x.tickets, 0) || 1;
+    const arr = full.slice(0, 60);
+    const overByAgent = {};
+    pool.filter(r => r.overRefLead).forEach(r => { const k = r.agent || '未知'; overByAgent[k] = (overByAgent[k] || 0) + r.ticketCount; });
+    el.innerHTML = `<tr><th>代理</th><th>在途票数</th><th>占比</th><th>超时票数</th><th>超时占比</th><th>吨数</th><th>方数</th></tr>` +
+      arr.map(x => {
+        const over = overByAgent[x.key] || 0;
+        const overPct = x.tickets ? (over / x.tickets * 100).toFixed(1) : '0.0';
+        return `<tr><td>${x.key || '—'}</td><td>${x.tickets}</td><td>${(x.tickets / tot * 100).toFixed(1)}%</td><td class="rate-bad">${over}</td><td class="rate-bad">${overPct}%</td><td>${(x.weight / 1000).toFixed(1)}</td><td>${x.volume.toFixed(1)}</td></tr>`;
+      }).join('') +
+      (arr.length === 0 ? '<tr><td colspan="7" style="text-align:center;color:#999">无数据</td></tr>' : '');
   }
   // 通用 KPI 卡片行（供新增模块复用）
   function setKpiRow(id, arr) {
@@ -802,17 +874,28 @@ const Daily = (function () {
             : (r.goodsStatus.includes('开查中') ? '开查中'
             : (r.goodsStatus.match(/索赔中|赔付中/) ? r.goodsStatus.match(/索赔中|赔付中/)[0] : '异常'));
           const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
-          // 查验持续天数：优先用「开始查验时间→完成查验时间」；未完成则用 TODAY - 开始时间
-          // 开始时间优先取新增字段（已在 parseDailyRows 中写入 domInspectDate/destInspectDate）
+          // 查验持续天数：优先 完成−开始；无完成则用 TODAY−开始；无开始则用「查验时长」字段兜底
           let inspectDays = '';
-          if (r.isInspecting && (r.domInspectDate || r.destInspectDate)) {
-            const inspectStart = r.domInspectDate && r.destInspectDate
-              ? (r.domInspectDate < r.destInspectDate ? r.domInspectDate : r.destInspectDate)
-              : (r.domInspectDate || r.destInspectDate);
-            const inspectFinish = r.domInspectEnd || r.destInspectEnd;
-            const endDate = inspectFinish || TODAY;
-            const dd = dayDiff(endDate, inspectStart);
-            inspectDays = (dd >= 0 && dd <= 365) ? `<td class="rate-bad">${dd}天${inspectFinish ? '<span style="color:#16a34a;font-size:11px">(已放行)</span>' : ''}</td>` : '<td>-</td>';
+          if (r.isInspecting) {
+            const dom = r.domInspectDate ? { start: r.domInspectDate, end: r.domInspectEnd, dur: r.domInspectDuration } : null;
+            const dest = r.destInspectDate ? { start: r.destInspectDate, end: r.destInspectEnd, dur: r.destInspectDuration } : null;
+            const calc = o => {
+              if (!o) return null;
+              if (!o.start) return o.dur > 0 ? { days: o.dur, finished: false } : null;
+              if (o.end) return { days: dayDiff(o.end, o.start), finished: true };
+              return { days: dayDiff(TODAY, o.start), finished: false };
+            };
+            const domCalc = calc(dom), destCalc = calc(dest);
+            const domDays = domCalc ? domCalc.days : null;
+            const destDays = destCalc ? destCalc.days : null;
+            const parts = [];
+            if (domDays !== null && domDays >= 0 && domDays <= 365) {
+              parts.push(`国内${domDays}天${dom && dom.end ? '<span style="color:#16a34a;font-size:11px">(已放行)</span>' : ''}`);
+            }
+            if (destDays !== null && destDays >= 0 && destDays <= 365) {
+              parts.push(`国外${destDays}天${dest && dest.end ? '<span style="color:#16a34a;font-size:11px">(已放行)</span>' : ''}`);
+            }
+            inspectDays = parts.length ? `<td class="rate-bad">${parts.join(' / ')}</td>` : '<td>-</td>';
           } else {
             inspectDays = '<td>-</td>';
           }
@@ -1086,16 +1169,62 @@ const Daily = (function () {
   // ============================================================
   // ⑦ 延误分析（沿用事业部口径）
   // ============================================================
+  let delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+  function setDelayFilter(key, val) {
+    if (delayFilters.hasOwnProperty(key)) delayFilters[key] = val || '';
+    renderDelayAnalysis();
+  }
+  function resetDelayFilters() {
+    delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+    ['dlFilterCustomer', 'dlFilterChannel', 'dlFilterAgent', 'dlFilterCountry', 'dlFilterTransport', 'dlFilterCat', 'dlFilterMonth'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderDelayAnalysis();
+  }
+  function buildDelayFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('dlFilterCustomer', unique(r => r.customer));
+    fill('dlFilterChannel', unique(r => r.channelCategory));
+    fill('dlFilterAgent', unique(r => r.agent));
+    fill('dlFilterCountry', unique(r => r.country));
+    fill('dlFilterTransport', unique(r => r.transport));
+    fill('dlFilterCat', unique(r => r.channelCategory));
+    fill('dlFilterMonth', unique(r => r.bizMonth));
+  }
+  function applyDelayFilters(pool) {
+    buildDelayFilterOptions();
+    return pool.filter(r => {
+      if (delayFilters.customer && r.customer !== delayFilters.customer) return false;
+      if (delayFilters.channel && r.channelCategory !== delayFilters.channel) return false;
+      if (delayFilters.agent && r.agent !== delayFilters.agent) return false;
+      if (delayFilters.country && r.country !== delayFilters.country) return false;
+      if (delayFilters.transport && r.transport !== delayFilters.transport) return false;
+      if (delayFilters.cat && r.channelCategory !== delayFilters.cat) return false;
+      if (delayFilters.month && r.bizMonth !== delayFilters.month) return false;
+      return true;
+    });
+  }
+
   function renderDelayAnalysis() {
     if (!todayRecs) { ['dl-kpis', 'dl-hist', 'dl-chan', 'dl-blank', 'dl-impactChart', 'dl-impactTable'].forEach(noData); return; }
-    const over = todayRecs.filter(r => r.overRefLead);   // 超参考时效未签收
+    const pool = applyDelayFilters(todayRecs);
+    const over = pool.filter(r => r.overRefLead);   // 超参考时效未签收
     const overDays = over.map(r => (r.shipDate ? dayDiff(TODAY, r.shipDate) : 0) - (r.refLead || 0)).filter(x => x > 0);
     const avgOver = overDays.length ? overDays.reduce((a, b) => a + b, 0) / overDays.length : 0;
     setKpiRow('dl-kpis', [
       { num: over.length, label: '超参考时效未签收', sub: '在途且已超承诺时效', cls: 'ov-overdue' },
       { num: over.length, label: '待填延误类型', sub: '监控无"延误类型"列，全部列为待跟进', cls: 'ov-new' },
       { num: avgOver.toFixed(1) + '天', label: '平均超期天数', sub: '在途天数−参考时效', cls: 'ov-intransit' },
-      { num: todayRecs.filter(r => r.inTransit).length, label: '在途总票数', sub: '含未超期', cls: 'ov-abn' }
+      { num: pool.filter(r => r.inTransit).length, label: '在途总票数', sub: '含未超期', cls: 'ov-abn' }
     ]);
     // 超期天数分布
     const buckets = ['1-5', '6-10', '11-20', '21-30', '30+']; const cnt = [0, 0, 0, 0, 0];
@@ -1114,7 +1243,7 @@ const Daily = (function () {
         `</tbody></table>`;
     }
     // 查验对延误的影响（仅已签收+含参考时效）
-    const signed = todayRecs.filter(r => !r.inTransit && r.refLead > 0 && r.transitDays > 0);
+    const signed = pool.filter(r => !r.inTransit && r.refLead > 0 && r.transitDays > 0);
     const dimOf = r => { if (r.domInsp && r.ovsInsp) return '国内+国外'; if (r.domInsp) return '仅起运港'; if (r.ovsInsp) return '仅目的港'; return '无查验'; };
     const dims = ['无查验', '仅起运港', '仅目的港', '国内+国外'];
     const stats = dims.map(dm => { const rs = signed.filter(r => dimOf(r) === dm); const n = rs.length; const at = n ? rs.reduce((a, b) => a + b.transitDays, 0) / n : 0; const ar = n ? rs.reduce((a, b) => a + b.refLead, 0) / n : 0; return { dm, n, at, ar, ex: at - ar }; });
@@ -1239,6 +1368,8 @@ const Daily = (function () {
   return {
     setData, setYesterday, init,
     setCostDim, setCostMetric, setCostCustomer, resetCostCustomer, setSlaPeriod, setSlaDim, resetSlaDim, setSlaFilter, resetSlaFilters, buildSlaFilterOptions,
+    setIntransitFilter, resetIntransitFilters,
+    setDelayFilter, resetDelayFilters,
     setAbnCustomer, setTmCustomer,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
     renderDelayAnalysis, renderInspByDate, renderUsOcean,
