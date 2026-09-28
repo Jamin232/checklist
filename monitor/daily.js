@@ -13,7 +13,7 @@ const Daily = (function () {
   let _inited = false;
   let slaPeriod = 'all'; // 'all' | 'halfmonth' | 'month' | 'twomonth'
   let slaDim = 'channel'; // 'channel' | 'agent' | 'customer' | 'logistic' | 'transport' | 'cat' | 'month'
-  let slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+  let slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
 
   let TODAY, TOMORROW; // 由 setData 的文件日期推导；未解析到则取真实今日
   let dataBaseDate = ''; // 数据基准日（来自 data.json meta.dataDate = 跟踪表文件名日期），仅作展示
@@ -515,14 +515,14 @@ const Daily = (function () {
   // ============================================================
   // ② 在途概览
   // ============================================================
-  let itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+  let itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
   function setIntransitFilter(key, val) {
     if (itFilters.hasOwnProperty(key)) itFilters[key] = val || '';
     renderIntransit();
   }
   function resetIntransitFilters() {
-    itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
-    ['itFilterCustomer', 'itFilterChannel', 'itFilterAgent', 'itFilterCountry', 'itFilterTransport', 'itFilterCat', 'itFilterMonth'].forEach(id => {
+    itFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['itFilterCustomer', 'itFilterChannel', 'itFilterAgent', 'itFilterCountry', 'itFilterTransport', 'itFilterCat', 'itFilterMonth', 'itFilterStore'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -545,6 +545,7 @@ const Daily = (function () {
     fill('itFilterTransport', unique(r => r.transport));
     fill('itFilterCat', unique(r => r.channelCategory));
     fill('itFilterMonth', unique(r => r.bizMonth));
+    fill('itFilterStore', unique(r => r.store));
   }
   function applyIntransitFilters(pool) {
     buildIntransitFilterOptions();
@@ -556,6 +557,7 @@ const Daily = (function () {
       if (itFilters.transport && r.transport !== itFilters.transport) return false;
       if (itFilters.cat && r.channelCategory !== itFilters.cat) return false;
       if (itFilters.month && r.bizMonth !== itFilters.month) return false;
+      if (itFilters.store && r.store !== itFilters.store) return false;
       return true;
     });
   }
@@ -682,8 +684,8 @@ const Daily = (function () {
     renderSLA();
   }
   function resetSlaFilters() {
-    slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
-    ['slaFilterCustomer', 'slaFilterChannel', 'slaFilterAgent', 'slaFilterCountry', 'slaFilterTransport', 'slaFilterCat', 'slaFilterMonth'].forEach(id => {
+    slaFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['slaFilterCustomer', 'slaFilterChannel', 'slaFilterAgent', 'slaFilterCountry', 'slaFilterTransport', 'slaFilterCat', 'slaFilterMonth', 'slaFilterStore'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -706,6 +708,7 @@ const Daily = (function () {
     fill('slaFilterTransport', unique(r => r.transport));
     fill('slaFilterCat', unique(r => r.channelCategory));
     fill('slaFilterMonth', unique(r => r.bizMonth));
+    fill('slaFilterStore', unique(r => r.store));
   }
 
   function slaKeyFn(r) {
@@ -740,6 +743,7 @@ const Daily = (function () {
       if (slaFilters.transport && r.transport !== slaFilters.transport) return false;
       if (slaFilters.cat && r.channelCategory !== slaFilters.cat) return false;
       if (slaFilters.month && r.bizMonth !== slaFilters.month) return false;
+      if (slaFilters.store && r.store !== slaFilters.store) return false;
       return true;
     });
     // 时效SLA基线：仅剔除"查验相关"订单（状态查验中/备注含查验/查验时间有值）；开查中、索赔赔付保留
@@ -798,21 +802,109 @@ const Daily = (function () {
     }
   }
 
-  // ---------------- 筛选状态 ----------------
-  let abnCustomerFilter = '全部'; // 异常/预警 客户筛选
-  let tmCustomerFilter = '全部';   // 预警 客户筛选
+  // ---------------- 筛选状态（异常 / 明日预警） ----------------
+  let abFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+  let tmFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
 
-  function setAbnCustomer(c) {
-    if (typeof _shareMode !== 'undefined' && _shareMode) { if (typeof showToast === 'function') showToast('分享视图为只读快照，客户筛选不可用，请用原系统查看', 'info'); return; }
-    abnCustomerFilter = c;
-    document.querySelectorAll('.abn-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
+  function shareGuard() {
+    if (typeof _shareMode !== 'undefined' && _shareMode) { if (typeof showToast === 'function') showToast('分享视图为只读快照，筛选不可用，请用原系统查看', 'info'); return true; }
+    return false;
+  }
+
+  function setAbFilter(key, val) {
+    if (shareGuard()) return;
+    if (abFilters.hasOwnProperty(key)) abFilters[key] = val || '';
     renderAbnormal();
   }
-  function setTmCustomer(c) {
-    if (typeof _shareMode !== 'undefined' && _shareMode) { if (typeof showToast === 'function') showToast('分享视图为只读快照，客户筛选不可用，请用原系统查看', 'info'); return; }
-    tmCustomerFilter = c;
-    document.querySelectorAll('.tm-cust-btn').forEach(b => b.classList.toggle('active', b.dataset.cust === c));
+  function resetAbFilters() {
+    if (shareGuard()) return;
+    abFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['abFilterCustomer', 'abFilterChannel', 'abFilterAgent', 'abFilterCountry', 'abFilterTransport', 'abFilterCat', 'abFilterMonth', 'abFilterStore'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderAbnormal();
+  }
+  function buildAbFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('abFilterCustomer', unique(r => r.customer));
+    fill('abFilterChannel', unique(r => r.channelCategory));
+    fill('abFilterAgent', unique(r => r.agent));
+    fill('abFilterCountry', unique(r => r.country));
+    fill('abFilterTransport', unique(r => r.transport));
+    fill('abFilterCat', unique(r => r.channelCategory));
+    fill('abFilterMonth', unique(r => r.bizMonth));
+    fill('abFilterStore', unique(r => r.store));
+  }
+  function applyAbFilters(pool) {
+    buildAbFilterOptions();
+    return pool.filter(r => {
+      if (abFilters.customer && r.customer !== abFilters.customer) return false;
+      if (abFilters.channel && r.channelCategory !== abFilters.channel) return false;
+      if (abFilters.agent && r.agent !== abFilters.agent) return false;
+      if (abFilters.country && r.country !== abFilters.country) return false;
+      if (abFilters.transport && r.transport !== abFilters.transport) return false;
+      if (abFilters.cat && r.channelCategory !== abFilters.cat) return false;
+      if (abFilters.month && r.bizMonth !== abFilters.month) return false;
+      if (abFilters.store && r.store !== abFilters.store) return false;
+      return true;
+    });
+  }
+
+  function setTmFilter(key, val) {
+    if (shareGuard()) return;
+    if (tmFilters.hasOwnProperty(key)) tmFilters[key] = val || '';
     renderTomorrow();
+  }
+  function resetTmFilters() {
+    if (shareGuard()) return;
+    tmFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['tmFilterCustomer', 'tmFilterChannel', 'tmFilterAgent', 'tmFilterCountry', 'tmFilterTransport', 'tmFilterCat', 'tmFilterMonth', 'tmFilterStore'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    renderTomorrow();
+  }
+  function buildTmFilterOptions() {
+    if (!todayRecs) return;
+    const unique = fn => [...new Set(todayRecs.map(fn).filter(Boolean))].sort();
+    const fill = (id, vals) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">全部</option>' + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (vals.includes(cur)) el.value = cur;
+    };
+    fill('tmFilterCustomer', unique(r => r.customer));
+    fill('tmFilterChannel', unique(r => r.channelCategory));
+    fill('tmFilterAgent', unique(r => r.agent));
+    fill('tmFilterCountry', unique(r => r.country));
+    fill('tmFilterTransport', unique(r => r.transport));
+    fill('tmFilterCat', unique(r => r.channelCategory));
+    fill('tmFilterMonth', unique(r => r.bizMonth));
+    fill('tmFilterStore', unique(r => r.store));
+  }
+  function applyTmFilters(pool) {
+    buildTmFilterOptions();
+    return pool.filter(r => {
+      if (tmFilters.customer && r.customer !== tmFilters.customer) return false;
+      if (tmFilters.channel && r.channelCategory !== tmFilters.channel) return false;
+      if (tmFilters.agent && r.agent !== tmFilters.agent) return false;
+      if (tmFilters.country && r.country !== tmFilters.country) return false;
+      if (tmFilters.transport && r.transport !== tmFilters.transport) return false;
+      if (tmFilters.cat && r.channelCategory !== tmFilters.cat) return false;
+      if (tmFilters.month && r.bizMonth !== tmFilters.month) return false;
+      if (tmFilters.store && r.store !== tmFilters.store) return false;
+      return true;
+    });
   }
 
   // ============================================================
@@ -825,24 +917,25 @@ const Daily = (function () {
   //   KPI 卡片展示：查验进行中(isInspecting) + 纯异常单(isPureAbnormal) —— 不重复计数
   function renderAbnormal() {
     if (!todayRecs) { noData('ab-cards'); noData('ab-table'); return; }
-    const inspecting = todayRecs.filter(r => r.isInspecting);
+    const pool = applyAbFilters(todayRecs);
+    const inspecting = pool.filter(r => r.isInspecting);
     // 开查中 = 快递开查（非海关查验、非索赔赔付）
-    const kaicha = todayRecs.filter(r =>
+    const kaicha = pool.filter(r =>
       r.goodsStatus.includes('开查中') &&
       !r.isInspecting &&
       !(r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
     // 纯异常 = 仅索赔中/赔付中（不含查验中、不含快递"开查中"，避免与查验进行中重复）
-    const pureAbnormal = todayRecs.filter(r =>
+    const pureAbnormal = pool.filter(r =>
       !r.isInspecting &&
       !r.goodsStatus.includes('开查中') &&
       (r.goodsStatus.includes('索赔中') || r.goodsStatus.includes('赔付中')));
-    const newInspect = todayRecs.filter(r =>
+    const newInspect = pool.filter(r =>
       (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
       (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1)));
     // 退运明细：退运中 = 货物状态含"查验中" 且 状态备注含"退运"。
     // 退运已结束的单（动态已回运输中/已签收/已送达/已妥投等）不再计入。
     const isReturnActive = r => r.goodsStatus.includes('查验中') && r.remark.includes('退运');
-    const tuiyun = todayRecs.filter(isReturnActive);
+    const tuiyun = pool.filter(isReturnActive);
 
     let deltaHtml = '';
     if (yesterdayRecs) {
@@ -869,20 +962,8 @@ const Daily = (function () {
     // 明细表（异常单）— 支持客户筛选 + 查验持续天数
     const tb = document.getElementById('ab-table');
     if (tb) {
-      // 构建客户筛选选项（横排 flex-wrap）
-      const allCustomers = [...new Set(todayRecs.filter(r => r.isAbnormal).map(r => r.customer).filter(Boolean))].sort();
-      let filterBar = '<div class="cust-filter-bar">' +
-        '<span class="cust-filter-label">客户筛选：</span>' +
-        `<span class="cust-btn abn-cust-btn${abnCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setAbnCustomer('全部')">全部</span>`;
-      allCustomers.slice(0, 20).forEach(cu => {
-        const active = abnCustomerFilter === cu;
-        filterBar += `<span class="cust-btn abn-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setAbnCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
-      });
-      filterBar += '</div>';
-
-      // 筛选后的行：宽口径异常(isAbnormal) + 客户过滤
-      let rows = todayRecs.filter(r => r.isAbnormal &&
-        (abnCustomerFilter === '全部' || r.customer === abnCustomerFilter))
+      // 筛选后的行：宽口径异常(isAbnormal)
+      let rows = pool.filter(r => r.isAbnormal)
         .slice(0, 300).map(r => {
           const t = r.isInspecting ? '查验中'
             : (r.goodsStatus.includes('开查中') ? '开查中'
@@ -915,7 +996,7 @@ const Daily = (function () {
           }
           return `<tr>${inspectDays}<td>${ticketDisplay}</td><td>${r.logisticChannel}</td><td>${r.agent}</td><td>${r.customer}</td><td>${r.country}</td><td class="status-inspected">${t}</td><td>${r.goodsStatus}</td></tr>`;
         }).join('');
-      tb.innerHTML = filterBar +
+      tb.innerHTML =
         `<table class="data-table"><thead><tr><th>查验天数</th><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>状态</th><th>货物状态</th></tr></thead>` +
         `<tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#999">无匹配记录</td></tr>'}</tbody></table>`;
     }
@@ -923,8 +1004,8 @@ const Daily = (function () {
     // —— ⑥ 新增：异常结果呈现（理赔/开查/索赔占比）+ 代理维度 ——
     const abDom = inspecting.length;                       // 查验中
     const abKai = kaicha.length;                           // 开查中
-    const abSuo = todayRecs.filter(r => r.isSuoPei).length; // 索赔中
-    const abLi = todayRecs.filter(r => r.isLiPei).length;   // 赔付/理赔
+    const abSuo = pool.filter(r => r.isSuoPei).length; // 索赔中
+    const abLi = pool.filter(r => r.isLiPei).length;   // 赔付/理赔
     setOpt('ab-resultChart', {
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       legend: { type: 'scroll', bottom: 0 },
@@ -937,7 +1018,7 @@ const Daily = (function () {
     });
     // 代理维度：异常票(宽口径) / 总票 / 异常率 / 其中赔付索赔开查
     const agMap = {};
-    todayRecs.forEach(r => {
+    pool.forEach(r => {
       const a = r.agent || '未知';
       if (!agMap[a]) agMap[a] = { total: 0, abn: 0, loss: 0 };
       agMap[a].total++;
@@ -1102,35 +1183,19 @@ const Daily = (function () {
 
   function renderTomorrow() {
     if (!todayRecs) { noData('tm-overdue'); noData('tm-mile'); return; }
+    const pool = applyTmFilters(todayRecs);
 
-    // 构建客户筛选选项：覆盖「在途超期」+「明日到港/清关/派送」相关单，避免只有部分客户可选
-    const allTmCustomers = [...new Set(todayRecs.filter(r =>
-      (r.inTransit && r.latestDeliver) || tomorrowPrimary(r)
-    ).map(r => r.customer).filter(Boolean))].sort();
-
-    // Part A：在途超期（按梯度）— 每个梯度独立展示，Tab式分离 + 客户筛选
+    // Part A：在途超期（按梯度）— 每个梯度独立展示，Tab式分离
     const tiers = [
       { key: '≥10天', test: d => d >= 10, cls: 'tier-10', desc: '严重超期，需立即跟进' },
       { key: '≥7天', test: d => d >= 7 && d < 10, cls: 'tier-7', desc: '明显超期，关注处理' },
       { key: '>5天', test: d => d > 5 && d < 7, cls: 'tier-5', desc: '轻度超期，持续观察' }
     ];
-    const list = todayRecs.filter(r => r.inTransit && r.latestDeliver);
-    // 应用客户筛选
-    const filteredList = tmCustomerFilter === '全部' ? list : list.filter(r => r.customer === tmCustomerFilter);
-    const overdueRows = filteredList.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
-
-    // 客户筛选栏（横排 flex-wrap）
-    let custFilterHtml = '<div class="cust-filter-bar">' +
-      '<span class="cust-filter-label">客户筛选：</span>' +
-      `<span class="cust-btn tm-cust-btn${tmCustomerFilter === '全部' ? ' active' : ''}" data-cust="全部" onclick="Daily.setTmCustomer('全部')">全部</span>`;
-    allTmCustomers.slice(0, 20).forEach(cu => {
-      const active = tmCustomerFilter === cu;
-      custFilterHtml += `<span class="cust-btn tm-cust-btn${active ? ' active' : ''}" data-cust="${cu}" onclick="Daily.setTmCustomer('${cu.replace(/'/g, "\\'")}')">${cu}</span>`;
-    });
-    custFilterHtml += '</div>';
+    const list = pool.filter(r => r.inTransit && r.latestDeliver);
+    const overdueRows = list.map(r => ({ r, d: dayDiff(TODAY, r.latestDeliver) })).filter(x => x.d > 0);
 
     // 构建每个梯度的独立卡片+表格
-    let oh = '<div class="tm-tier-group">' + custFilterHtml;
+    let oh = '<div class="tm-tier-group">';
     for (const t of tiers) {
       const rows = overdueRows.filter(x => t.test(x.d)).sort((a, b) => b.d - a.d).slice(0, 100);
       oh += `<div class="tm-tier-block">
@@ -1153,8 +1218,8 @@ const Daily = (function () {
     oh += '</div>';
     document.getElementById('tm-overdue').innerHTML = oh;
 
-    // Part B：明日到港/清关/派送（同步应用客户筛选）
-    const tom = todayRecs.map(r => ({ r, t: tomorrowPrimary(r) })).filter(x => x.t && (tmCustomerFilter === '全部' || x.r.customer === tmCustomerFilter));
+    // Part B：明日到港/清关/派送
+    const tom = pool.map(r => ({ r, t: tomorrowPrimary(r) })).filter(x => x.t);
     const byType = { 到港: {}, 清关: {}, 派送: {} };
     tom.forEach(x => {
       const ck = x.r.logisticChannel || '未知';
@@ -1204,14 +1269,14 @@ const Daily = (function () {
   // ============================================================
   // ⑦ 延误分析（沿用事业部口径）
   // ============================================================
-  let delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
+  let delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
   function setDelayFilter(key, val) {
     if (delayFilters.hasOwnProperty(key)) delayFilters[key] = val || '';
     renderDelayAnalysis();
   }
   function resetDelayFilters() {
-    delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '' };
-    ['dlFilterCustomer', 'dlFilterChannel', 'dlFilterAgent', 'dlFilterCountry', 'dlFilterTransport', 'dlFilterCat', 'dlFilterMonth'].forEach(id => {
+    delayFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '' };
+    ['dlFilterCustomer', 'dlFilterChannel', 'dlFilterAgent', 'dlFilterCountry', 'dlFilterTransport', 'dlFilterCat', 'dlFilterMonth', 'dlFilterStore'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -1234,6 +1299,7 @@ const Daily = (function () {
     fill('dlFilterTransport', unique(r => r.transport));
     fill('dlFilterCat', unique(r => r.channelCategory));
     fill('dlFilterMonth', unique(r => r.bizMonth));
+    fill('dlFilterStore', unique(r => r.store));
   }
   function applyDelayFilters(pool) {
     buildDelayFilterOptions();
@@ -1245,6 +1311,7 @@ const Daily = (function () {
       if (delayFilters.transport && r.transport !== delayFilters.transport) return false;
       if (delayFilters.cat && r.channelCategory !== delayFilters.cat) return false;
       if (delayFilters.month && r.bizMonth !== delayFilters.month) return false;
+      if (delayFilters.store && r.store !== delayFilters.store) return false;
       return true;
     });
   }
@@ -1467,7 +1534,8 @@ const Daily = (function () {
     setIntransitFilter, resetIntransitFilters,
     setDelayFilter, resetDelayFilters,
     setInspFilter, resetInspFilters, buildInspFilterOptions,
-    setAbnCustomer, setTmCustomer,
+    setAbFilter, resetAbFilters,
+    setTmFilter, resetTmFilters,
     renderOverview, renderIntransit, renderSLA, renderAbnormal, renderCost, renderTomorrow,
     renderDelayAnalysis, renderInspByDate, renderUsOcean,
     getShareCharts, resizeAllCharts
