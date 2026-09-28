@@ -932,7 +932,9 @@ const Daily = (function () {
       const a = r.agent || '未知';
       if (!agMap[a]) agMap[a] = { total: 0, abn: 0, loss: 0 };
       agMap[a].total++;
-      if (r.isAbnormal) agMap[a].abn++;
+      // 宽口径异常：状态异常(查验中/开查中/索赔中/赔付中) ∪ 发生过查验(同 SLA 排除口径 isSlaAbnormal)。
+      // 注：仅以"查验中"判定会漏掉已放行但状态不再写查验的历史查验单，故发生过即纳入。
+      if (r.isAbnormal || isSlaAbnormal(r)) agMap[a].abn++;
       if (r.lossClaim) agMap[a].loss++;
     });
     const agArr = Object.entries(agMap).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.abn - a.abn).slice(0, 15);
