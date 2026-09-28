@@ -190,14 +190,16 @@ const Daily = (function () {
       ship: find('仓库出货日期'),
       status: find('货物状态'),
       remark: find('状态备注'),
-      dom: find('国内', '查验'),
-      dest: find('目的地', '查验'),
+      dom: find('国内查验时间'),
+      dest: find('目的地查验时间'),
       domStart: find('国内开始查验时间'),
       destStart: find('国外开始查验时间'),
       domEnd: find('国内查验完成时间'),
       destEnd: find('国外查验完成时间'),
       domDuration: find('国内查验时长'),
       destDuration: find('国外查验时长'),
+      domType: find('国内查验类型'),
+      destType: find('国外查验类型'),
       main: find('主出仓单号'),
       type: find('类型'),
       logi: find('素芸物流渠道'),
@@ -239,6 +241,9 @@ const Daily = (function () {
       const destInspectEnd = parseDate(row[map.destEnd]);
       const domDuration = safeNum(row[map.domDuration]);
       const destDuration = safeNum(row[map.destDuration]);
+      // 新版查验类型字段：非空即视为发生过查验
+      const domType = safeStr(row[map.domType]);
+      const destType = safeStr(row[map.destType]);
       // 旧版「国内查验时间/目的地查验时间」在 data.json 中常为日期序列号，也作为开始时间兜底
       const domInspectStartOld = parseDate(row[map.dom]);
       const destInspectStartOld = parseDate(row[map.dest]);
@@ -249,9 +254,10 @@ const Daily = (function () {
       const hasDomKeyword = /国内/.test(remark) && /查验/.test(remark);
       const hasDestKeyword = /国外|目的地/.test(remark) && /查验/.test(remark);
 
-      // 国内外查验判定：关键词 / 开始时间 / 时长 任一有值
-      const isDomInsp = hasDomKeyword || !!domInspectStartNew || !!domInspectStartOld || domDuration > 0;
-      const isForeignInsp = hasDestKeyword || !!destInspectStartNew || !!destInspectStartOld || destDuration > 0;
+      // 国内外查验判定：关键词 / 开始时间 / 完成时间 / 查验类型 / 查验时长 任一有值
+      // 注意：只要 8 个查验相关字段之一有值，即视为「发生过查验」（含已放行）
+      const isDomInsp = hasDomKeyword || !!domInspectStartNew || !!domInspectStartOld || !!domInspectEnd || domDuration > 0 || !!domType;
+      const isForeignInsp = hasDestKeyword || !!destInspectStartNew || !!destInspectStartOld || !!destInspectEnd || destDuration > 0 || !!destType;
 
       // 查验发生日期：优先新字段 > 旧日期字段 > 状态文本日期（按备注关键词归侧） > 备注文本提取
       let domInspectDate = domInspectStartNew || domInspectStartOld || extractInspectDate(remark, '国内查验');
@@ -318,6 +324,7 @@ const Daily = (function () {
         domInspectDate, destInspectDate,
         domInspectEnd, destInspectEnd,
         domInspectDuration: domDuration, destInspectDuration: destDuration,
+        domInspType: domType, destInspType: destType,
         inTransit: intransit,
         isInspecting,
         isAbnormal,
@@ -1285,19 +1292,19 @@ const Daily = (function () {
   // ============================================================
   // ⑧ 按查验发生日期口径的查验率统计
   // ============================================================
-  let inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '', status: 'active' };
+  let inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '', status: 'all' };
   function setInspFilter(key, val) {
     if (inspFilters.hasOwnProperty(key)) inspFilters[key] = val || '';
     renderInspByDate();
   }
   function resetInspFilters() {
-    inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '', status: 'active' };
+    inspFilters = { customer: '', channel: '', agent: '', country: '', transport: '', cat: '', month: '', store: '', status: 'all' };
     ['idFilterCustomer', 'idFilterChannel', 'idFilterAgent', 'idFilterCountry', 'idFilterTransport', 'idFilterCat', 'idFilterMonth', 'idFilterStore'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
     const statusEl = document.getElementById('idFilterInspStatus');
-    if (statusEl) statusEl.value = 'active';
+    if (statusEl) statusEl.value = 'all';
     renderInspByDate();
   }
   function buildInspFilterOptions() {
@@ -1369,9 +1376,9 @@ const Daily = (function () {
       { num: activeTotal, label: '在查合计', sub: '货物状态含查验中', cls: 'ov-new' },
       { num: shipTotal, label: '有出货日期票', sub: '起运港分母口径', cls: 'ov-overdue' }
     ] : [
-      { num: domTotal, label: '国内(起运港)查验累计', sub: '备注/字段累计' + (domWithStart ? `｜人工起止 ${domWithStart}单` : ''), cls: 'ov-intransit' },
-      { num: forTotal, label: '国外(目的港)查验累计', sub: '备注/字段累计' + (forWithStart ? `｜人工起止 ${forWithStart}单` : ''), cls: 'ov-abn' },
-      { num: domFinished + forFinished, label: '已放行查验', sub: '完成时间有值即放行', cls: 'ov-new' },
+      { num: domTotal, label: '国内(起运港)查验', sub: '发生过即纳入（含已放行）' + (domWithStart ? `｜人工起止 ${domWithStart}单` : ''), cls: 'ov-intransit' },
+      { num: forTotal, label: '国外(目的港)查验', sub: '发生过即纳入（含已放行）' + (forWithStart ? `｜人工起止 ${forWithStart}单` : ''), cls: 'ov-abn' },
+      { num: activeTotal, label: '当前在查', sub: '货物状态含查验中', cls: 'ov-new' },
       { num: shipTotal, label: '有出货日期票', sub: '起运港分母口径', cls: 'ov-overdue' }
     ];
     setKpiRow('id-kpis', kpis);
@@ -1389,11 +1396,11 @@ const Daily = (function () {
       ]
     });
     const tb = document.getElementById('id-table');
-    if (tb) tb.innerHTML = `<table class="data-table"><thead><tr><th>月份</th><th>出货票</th><th>${activeOnly ? '国内查验中' : '国内查验累计'}</th><th>起运港率</th><th>到港票</th><th>${activeOnly ? '国外查验中' : '国外查验累计'}</th><th>目的港率</th></tr></thead><tbody>` +
+    if (tb) tb.innerHTML = `<table class="data-table"><thead><tr><th>月份</th><th>出货票</th><th>${activeOnly ? '国内查验中' : '国内查验'}</th><th>起运港率</th><th>到港票</th><th>${activeOnly ? '国外查验中' : '国外查验'}</th><th>目的港率</th></tr></thead><tbody>` +
       agg.map(a => `<tr><td>${a.m}</td><td>${a.shipped}</td><td>${a.dom}</td><td class="${a.domRate >= 5 ? 'rate-bad' : a.domRate >= 3 ? 'rate-mid' : 'rate-good'}">${a.domRate != null ? a.domRate + '%' : '—'}</td><td>${a.arr}</td><td>${a.dest}</td><td class="${a.ovsRate >= 5 ? 'rate-bad' : a.ovsRate >= 3 ? 'rate-mid' : 'rate-good'}">${a.ovsRate != null ? a.ovsRate + '%' : '—'}</td></tr>`).join('') +
       `<tr style="font-weight:700;background:#f3f6fa"><td>合计</td><td>${shipTotal}</td><td>${domTotal}</td><td>${shipTotal ? +(domTotal / shipTotal * 100).toFixed(1) + '%' : '—'}</td><td>${arrTotal}</td><td>${forTotal}</td><td>${arrTotal ? +(forTotal / arrTotal * 100).toFixed(1) + '%' : '—'}</td></tr></tbody></table>` +
-      `<div class="ov-note" style="margin-top:10px;color:#666">📌 口径备注：${activeOnly ? '当前在查 = 发生过查验 且 货物状态含"查验中"；历史累计请切换顶部「查验状态」筛选。' : '目的港查验率分母 = 「到港日期」当月票数；到港日期为空的目的港查验单未计入分母，可能导致目的港率偏低。'}` +
-      ` 2026-09-24 起新增「国内/国外开始查验时间」「国内/国外查验完成时间」字段：开始时间有值即视为发生查验，完成时间有值即视为放行；异常页据此计算查验持续天数。</div>`;
+      `<div class="ov-note" style="margin-top:10px;color:#666">📌 口径备注：${activeOnly ? '当前在查 = 发生过查验 且 货物状态含"查验中"；发生过请切换顶部「查验状态」筛选。' : '目的港查验率分母 = 「到港日期」当月票数；到港日期为空的目的港查验单未计入分母，可能导致目的港率偏低。'}` +
+      ` 「发生过查验」判定：国内/国外开始查验时间、国内/国外查验完成时间、国内/国外查验类型、国内/国外查验时长 8 个字段中任一有值，或在查状态备注明确，即纳入（含已放行）。当前在查另加限制：货物状态含"查验中"。</div>`;
   }
 
   // ============================================================
