@@ -832,8 +832,9 @@ const Daily = (function () {
     const newInspect = todayRecs.filter(r =>
       (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
       (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1)));
-    // 退运明细：状态备注含"退运"字样全部纳入
-    const tuiyun = todayRecs.filter(r => r.remark.includes('退运'));
+    // 退运明细：状态备注含"退运"，且退运仍在进行中（按用户口径：退运中→动态查验中，退运结束→动态运输中，故已回到运输中的不再计入）
+    const isReturnActive = r => r.remark.includes('退运') && !r.goodsStatus.includes('运输中');
+    const tuiyun = todayRecs.filter(isReturnActive);
 
     let deltaHtml = '';
     if (yesterdayRecs) {
@@ -945,7 +946,7 @@ const Daily = (function () {
         `</tbody></table>`;
     }
 
-    // —— 退运明细：状态备注含"退运"字样全部纳入 ——
+    // —— 退运明细：状态备注含"退运"且仍在退运中（已回到运输中的退运结束单不计入） ——
     const tyTb = document.getElementById('ab-returnTable');
     if (tyTb) {
       const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
