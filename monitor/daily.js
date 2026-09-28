@@ -261,10 +261,10 @@ const Daily = (function () {
         if (!destInspectDate && hasDestKeyword) destInspectDate = statusInspectDate;
       }
 
-      // 海关查验判定：货物状态含"查验中" 或 有开始时间且未放行
-      const isInspecting = goodsStatus.includes('查验中') ||
-        (!!domInspectDate && !domInspectEnd) ||
-        (!!destInspectDate && !destInspectEnd);
+      // 海关查验判定：严格以"货物状态含查验中"为准（单一事实源）。
+      // 注意：曾有"有开始时间且无完成时间→判定查验中"的宽口径，会把已放行但漏填完成时间的
+      // 历史查验单也计入，导致查验中严重虚高（真实仅133单）。故此处只用状态文本信号。
+      const isInspecting = goodsStatus.includes('查验中');
       const isAbnormal = STATUS_WORDS.some(w => goodsStatus.includes(w)) || isInspecting;
 
       // —— 派生字段（支撑 SLA多维 / 异常代理维度 / 延误分析 / 查验日期口径 / 美线海运 等模块）——
@@ -832,6 +832,8 @@ const Daily = (function () {
     const newInspect = todayRecs.filter(r =>
       (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
       (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1)));
+    // 退运明细：状态备注含"退运"字样全部纳入
+    const tuiyun = todayRecs.filter(r => r.remark.includes('退运'));
 
     let deltaHtml = '';
     if (yesterdayRecs) {
@@ -852,6 +854,7 @@ const Daily = (function () {
       `<div class="kpi-card" style="--card-color:#7c3aed"><div class="kpi-num" style="color:#7c3aed">${kaicha.length}</div><div class="kpi-label">开查中</div></div>` +
       `<div class="kpi-card ov-overdue"><div class="kpi-num">${pureAbnormal.length}</div><div class="kpi-label">索赔/赔付</div></div>` +
       `<div class="kpi-card ov-new"><div class="kpi-num">${newInspect.length}</div><div class="kpi-label">近两日新增查验(${fmtMD(new Date(Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate() - 1)))}-${fmtMD(TODAY)})</div></div>` +
+      `<div class="kpi-card" style="--card-color:#dc2626"><div class="kpi-num" style="color:#dc2626">${tuiyun.length}</div><div class="kpi-label">退运</div></div>` +
       '</div>' + deltaHtml;
 
     // 明细表（异常单）— 支持客户筛选 + 查验持续天数
@@ -938,6 +941,25 @@ const Daily = (function () {
       agTb.innerHTML = `<table class="data-table"><thead><tr><th>代理</th><th>总票</th><th>异常票</th><th>异常率</th><th>其中赔付/索赔/开查</th></tr></thead><tbody>` +
         agArr.map(x => `<tr><td>${x.k}</td><td>${x.total}</td><td>${x.abn}</td><td class="${x.total ? (x.abn / x.total * 100 >= 10 ? 'rate-bad' : 'rate-mid') : ''}">${x.total ? (x.abn / x.total * 100).toFixed(1) + '%' : '—'}</td><td>${x.loss}</td></tr>`).join('') +
         `</tbody></table>`;
+    }
+
+    // —— 退运明细：状态备注含"退运"字样全部纳入 ——
+    const tyTb = document.getElementById('ab-returnTable');
+    if (tyTb) {
+      const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const tyRows = tuiyun.slice(0, 400).map(r => {
+        const ticketDisplay = r.tickets.length > 1 ? r.tickets.slice(0, 3).join('<br>') + (r.tickets.length > 3 ? `<br><span style="color:#888;font-size:10px">+${r.tickets.length - 3}更多</span>` : '') : (r.tickets[0] || r.mainTicket);
+        const rm = r.remark || '';
+        const idx = rm.indexOf('退运');
+        let snippet = rm;
+        if (idx >= 0) {
+          const start = Math.max(0, idx - 12);
+          const end = Math.min(rm.length, idx + 24);
+          snippet = (start > 0 ? '…' : '') + rm.slice(start, end) + (end < rm.length ? '…' : '');
+        }
+        return `<tr><td>${esc(ticketDisplay)}</td><td>${esc(r.logisticChannel)}</td><td>${esc(r.agent)}</td><td>${esc(r.customer)}</td><td>${esc(r.country)}</td><td class="status-inspected">${esc(r.goodsStatus)}</td><td style="max-width:300px;white-space:normal;word-break:break-all">${esc(snippet)}</td></tr>`;
+      }).join('');
+      tyTb.innerHTML = `<table class="data-table"><thead><tr><th>分出仓单号</th><th>渠道</th><th>代理</th><th>客户</th><th>国家</th><th>货物状态</th><th>状态备注（退运摘要）</th></tr></thead><tbody>${tyRows || '<tr><td colspan="7" style="text-align:center;color:#999">无退运记录</td></tr>'}</tbody></table>`;
     }
   }
 
