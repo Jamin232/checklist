@@ -250,9 +250,9 @@ const Daily = (function () {
 
       // 从货物状态文本提取查验日期（如 "9/16查验中"），作为发生日期兜底
       const statusInspectDate = goodsStatus.includes('查验') ? parseDateFromStatus(goodsStatus) : null;
-      // 备注中同时出现 "国内"+"查验" / "国外/目的地"+"查验" 即判定为该侧发生查验
+      // 备注中同时出现 "国内"+"查验" / "国外/目的地/目的港"+"查验" 即判定为该侧发生查验
       const hasDomKeyword = /国内/.test(remark) && /查验/.test(remark);
-      const hasDestKeyword = /国外|目的地/.test(remark) && /查验/.test(remark);
+      const hasDestKeyword = /国外|目的地|目的港/.test(remark) && /查验/.test(remark);
 
       // 国内外查验判定：关键词 / 开始时间 / 完成时间 / 查验类型 / 查验时长 任一有值
       // 注意：只要 8 个查验相关字段之一有值，即视为「发生过查验」（含已放行）
@@ -261,9 +261,12 @@ const Daily = (function () {
 
       // 查验发生日期：优先新字段 > 旧日期字段 > 状态文本日期（按备注关键词归侧） > 备注文本提取
       let domInspectDate = domInspectStartNew || domInspectStartOld || extractInspectDate(remark, '国内查验');
-      let destInspectDate = destInspectStartNew || destInspectStartOld || extractInspectDate(remark, '国外查验');
+      let destInspectDate = destInspectStartNew || destInspectStartOld || extractInspectDate(remark, '国外查验') || extractInspectDate(remark, '目的港查验');
       if (statusInspectDate) {
-        if (!domInspectDate && (hasDomKeyword || (!hasDomKeyword && !hasDestKeyword))) domInspectDate = statusInspectDate;
+        // 状态文本日期兜底：有明确关键词按关键词归侧；无关键词时，若已有某侧字段证据则不倒灌到另一侧
+        const hasDomEvidence = hasDomKeyword || !!domInspectStartNew || !!domInspectStartOld || !!domInspectEnd || domDuration > 0 || !!domType;
+        const hasDestEvidence = hasDestKeyword || !!destInspectStartNew || !!destInspectStartOld || !!destInspectEnd || destDuration > 0 || !!destType;
+        if (!domInspectDate && (hasDomKeyword || (!hasDomKeyword && !hasDestEvidence))) domInspectDate = statusInspectDate;
         if (!destInspectDate && hasDestKeyword) destInspectDate = statusInspectDate;
       }
 
