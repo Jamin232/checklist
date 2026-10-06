@@ -1172,7 +1172,8 @@ async function loadFromServer() {
     const timer = setTimeout(() => ctrl.abort(), 60000);
     let resp;
     try {
-      resp = await fetch('data.json', { cache: 'no-store', signal: ctrl.signal });
+      // 加时间戳 cache-buster：绕过浏览器/CDN 缓存，确保推送后立刻拿到最新 data.json
+      resp = await fetch('data.json?v=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
     } catch (e) {
       if (e.name === 'AbortError') throw new Error('加载超时（>60s）：可能是网络慢或 data.json 未部署');
       throw new Error('网络请求失败：' + (e.message || e));
