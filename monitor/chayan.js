@@ -173,6 +173,39 @@ function parseRemarkEvents(remark) {
   return out;
 }
 
+// 2026-10-29 节点微调（用户口径：小幅度按关键词修正，不大改）
+//  ① 海运/空运/快递：备注已离境(已开船/已飞…) 且有"预计到港/抵达"信号、无"实际到港/到清关点" → 仍在途，归 出境（不归到港清关）。
+//  ② 铁路/陆运：到清关点 才是到港里程碑；"已到站/到站"(口岸/车站) 与 "已提柜"(清关点前) 均属在途，归 出境。
+function reclassifyNode(rec, code) {
+  if (!rec || !code) return code;
+  const ch = getChannelType(rec) || '';
+  const full = String(rec.remark || '');
+  const lines = full.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const firstLine = lines[0] || '';
+  // 清洗预测语（预计/延误至/更新预计 … 到港/抵达/清关点 等）后再判定"实际到港"，避免"预计抵达清关点"被误当实际到港
+  const cleanedFull = full.replace(/(?:预计|延误至|更新预计)[^,，\n。]*?(到港|抵达|落地|到站|到达|派送|签收|清关|放行|装船|开船|起飞|发车|装柜|提柜|查验|装车|离港|离境|出境)/g, '');
+  const isRail = /铁路|陆运/.test(ch);
+  const departed = /已开船|已离港|船舶已离开|已飞|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离站|离境|已出境|出境/.test(full);
+  // 实际到港/到清关点/已清关信号（清洗掉预测语后仍存在 = 实际发生）；铁路/陆运：到站/到达口岸 仅属口岸/车站，不算到港
+  const actualArrive = isRail
+    ? /已到港|已落地|抵港|到目的监管仓|已到达清关点|已抵达清关点|到清关点|抵达清关点|已清关|清关完成|清完关|清关中/.test(cleanedFull)
+    : /已到港|已抵达|已落地|已到站|抵港|到目的监管仓|已到达清关点|已抵达清关点|到清关点|抵达清关点|已清关|清关完成|清完关|清关中/.test(cleanedFull);
+  // 铁路是否已过清关（完成清关/已清关/清关完成等）：已清关则不可降级为出境
+  const railCleared = /完成清关|已清关|清关完成|清完关|清关中|海关已放行|查验已放行|已放行/.test(full);
+  // 到港日期列 若晚于离境日 = 真实到港（即便备注含旧预测行，也以列为准）
+  const colArrivalReal = rec.arrive && (!rec.depart || rec.arrive > rec.depart);
+  if (code === 'arrive') {
+    // ① 最新动态(首行)已离境 且 首行无实际到港、且到港日期列非真实到港、未清关 → 仍在途(出境)
+    const firstDeparted = /已开船|已离港|船舶已离开|已飞|航班已飞|已起飞|一程已飞|二程已飞|续程已飞|航司已飞|已发车|班列发车|发车|离站|离境|已出境|出境/.test(firstLine);
+    const firstActualArrive = /已到港|已抵达|已落地|已到站|抵港|到清关点|抵达清关点|到目的监管仓/.test(firstLine);
+    if (!actualArrive && firstDeparted && !firstActualArrive && !colArrivalReal && !railCleared) return 'depart';
+    // ② 铁路：到站/到达口岸(非到清关点) 且未清关 → 出境
+    if (isRail && /已到站|到站|到达口岸|到达监管仓/.test(cleanedFull) && !/到清关点|抵达清关点|到目的监管仓/.test(cleanedFull) && !railCleared) return 'depart';
+  }
+  if (code === 'pickup' && isRail && !actualArrive && /预计[^,，。\n]*?(到清关点|抵达清关点|清关)/.test(full) && !railCleared) return 'depart'; // ② 铁路清关点前提柜→在途(未清关)
+  return code;
+}
+
 // 构建标准事件链：结构化日期列 + 状态备注解析，合并去重（同 code 取最新；datecol 优先于 remark）
 function buildEventChain(rec) {
   if (!rec) return { events: [], lastEvent: null, excluded: false };
@@ -202,6 +235,8 @@ function buildEventChain(rec) {
   if (byCode.extract) delete byCode.carrier_in;
   const merged = Object.values(byCode).sort((a, b) => a.date - b.date);
   const lastEvent = merged[merged.length - 1];
+  // 2026-10-29 节点微调：按关键词把"仍在途"的到港清关/末端提取 重新归并为 出境
+  if (lastEvent) lastEvent.code = reclassifyNode(rec, lastEvent.code);
   let excluded = false, excludeReason = '';
   const eta = extractEtaFromRemark(rec.remark);
   if (lastEvent && lastEvent.code === 'delivered') { excluded = true; excludeReason = '已签收'; }
