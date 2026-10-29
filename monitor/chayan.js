@@ -40,13 +40,17 @@ const CLAIM_KEYWORDS = ['赔付', '理赔', '索赔', '货值', '月账单', '�
 // 2026-10-29 完结动态排除（用户口径）：状态备注「首行」（首行最新）或「货物状态」出现
 // 送达/签收/妥投/上架/销毁/弃货/灭失 等完结字样 → 轨迹已结束，不再计入滞留预警。
 // 防误伤：首行含"部分签收/剩余…找货/未签收"等残留语时不算完结（仍有未了结箱件）。
-const TERMINAL_RE = /(已签收|已送达|已妥投|妥投完成|已上架|未上架|销毁|弃货|货物灭失|已丢失)/;
-const NOT_TERMINAL_RE = /(部分签收|部分到|剩余|还在找|未签收|待签收|还在派送|派送中)/;
+const TERMINAL_RE = /(已签收|已送达|已妥投|妥投完成|已完成|已上架|未上架|销毁|弃货|货物灭失|已丢失)/;
+const NOT_TERMINAL_RE = /(部分签收|部分到|剩余|还在找|未签收|待签收|还在派送|派送中|清关|查验|检查|复验|审核)/;
+// 货物状态为受控短字段，用更宽的完结词表（用户口径：状态优先级最高，含 完成/签收/送达/妥投/退回 即完结）
+const STATUS_TERMINAL_RE = /(签收|送达|妥投|完成|销毁|弃货|灭失|已丢失|已退回)/;
 function isTerminalRemark(rec) {
   const firstLine = String(rec.remark || '').split(/\r?\n/)[0] || '';
   const status = String(rec.goodsStatus || '');
+  // 状态优先级最高：状态命中完结字样 → 直接判完结（仍防误伤"部分签收"等残留语）
+  if (STATUS_TERMINAL_RE.test(status) && !NOT_TERMINAL_RE.test(status)) return true;
   const hit = s => TERMINAL_RE.test(s) && !NOT_TERMINAL_RE.test(s);
-  return hit(firstLine) || hit(status);
+  return hit(firstLine);
 }
 
 // 航行/运输途中关键词（命中 → 看 ETA：ETA 未到则豁免；已过 ETA 则按逾期报警）
