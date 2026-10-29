@@ -37,6 +37,18 @@ const DEFAULT_STAGNATION_DAYS = 5;
 // 理赔/已结案类关键词（命中 → 不报警；这类单轨迹已结束，重点是赔付流程）
 const CLAIM_KEYWORDS = ['赔付', '理赔', '索赔', '货值', '月账单', '月结账单', '对账', '已结清', '已结案', '已赔付', '已提供货值', '待提供货值'];
 
+// 2026-10-29 完结动态排除（用户口径）：状态备注「首行」（首行最新）或「货物状态」出现
+// 送达/签收/妥投/上架/销毁/弃货/灭失 等完结字样 → 轨迹已结束，不再计入滞留预警。
+// 防误伤：首行含"部分签收/剩余…找货/未签收"等残留语时不算完结（仍有未了结箱件）。
+const TERMINAL_RE = /(已签收|已送达|已妥投|妥投完成|已上架|未上架|销毁|弃货|货物灭失|已丢失)/;
+const NOT_TERMINAL_RE = /(部分签收|部分到|剩余|还在找|未签收|待签收|还在派送|派送中)/;
+function isTerminalRemark(rec) {
+  const firstLine = String(rec.remark || '').split(/\r?\n/)[0] || '';
+  const status = String(rec.goodsStatus || '');
+  const hit = s => TERMINAL_RE.test(s) && !NOT_TERMINAL_RE.test(s);
+  return hit(firstLine) || hit(status);
+}
+
 // 航行/运输途中关键词（命中 → 看 ETA：ETA 未到则豁免；已过 ETA 则按逾期报警）
 const SAILING_KEYWORDS = ['已开船', '已起航', '已开航', '已离港', '航行中', '船已开'];
 
@@ -210,6 +222,8 @@ function buildEventChain(rec) {
 function determineStagnation(rec, nowOverride) {
   if (!rec) return null;
   if (rec.signoff) return null; // 已签收：非滞留
+  // 2026-10-29 完结动态排除：最新动态（备注首行）/货物状态含 送达/签收/上架/销毁 等完结字样
+  if (isTerminalRemark(rec)) return { excluded: true, reason: '完结动态(签收/送达/上架/销毁等)' };
   const chain = buildEventChain(rec);
   if (chain.excluded) return { excluded: true, reason: chain.excludeReason };
   if (!chain.lastEvent) return null;
@@ -663,6 +677,7 @@ function processData(rows) {
       productAttr: safeStr(row['产品属性']),
       shipDate,
       remark,
+      goodsStatus: safeStr(row['货物状态']), // 2026-10-29 完结动态排除需要
       avgInspectTime,
       boxes: safeNum(row['箱数']),
       pieces: safeNum(row['件数']),
@@ -2065,7 +2080,7 @@ function updateStagnationTab() {
   const now = new Date();
   // 计算所有票的滞留诊断
   const diagList = [];
-  const excluded = { claim: 0, sailing: 0, signed: 0 }; // 排除分类计数
+  const excluded = { claim: 0, sailing: 0, signed: 0, finished: 0 }; // 排除分类计数
   for (const rec of records) {
     const d = determineStagnation(rec, now);
     if (!d) continue;
@@ -2073,6 +2088,7 @@ function updateStagnationTab() {
       if (d.reason === '理赔/已结案') excluded.claim++;
       else if (d.reason === '航行中(在途)') excluded.sailing++;
       else if (d.reason === '已签收') excluded.signed++;
+      else if (d.reason && d.reason.indexOf('完结动态') === 0) excluded.finished++;
       continue;
     }
     if (!d.stagnant) continue;
@@ -2098,7 +2114,7 @@ function updateStagnationTab() {
   const highCount = filtered.filter(x => x.d.stagnationDays >= 3).length;
   const agentSet = new Set(filtered.map(x => x.rec.agent).filter(Boolean));
   const customerSet = new Set(filtered.map(x => x.rec.customer).filter(Boolean));
-  const excludedTotal = excluded.claim + excluded.sailing + excluded.signed;
+  const excludedTotal = excluded.claim + excluded.sailing + excluded.signed + excluded.finished;
 
   const setText = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
   setText('stagTotal', total.toLocaleString());
@@ -2115,6 +2131,7 @@ function updateStagnationTab() {
     const exParts = [`理赔/已结案 <b>${excluded.claim}</b>`];
     if (excluded.sailing) exParts.push(`航行中(在途) <b>${excluded.sailing}</b>`);
     if (excluded.signed) exParts.push(`已签收(备注) <b>${excluded.signed}</b>`);
+    if (excluded.finished) exParts.push(`完结动态 <b>${excluded.finished}</b>`);
     noteEl.innerHTML = `已排除 <b>${excludedTotal.toLocaleString()}</b> 票（${exParts.join('，')}）——这类单据无轨迹风险，按业务规则跳过`;
   }
 
