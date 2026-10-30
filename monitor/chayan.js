@@ -1221,21 +1221,30 @@ async function loadAndProcessRows(rows, meta) {
 async function loadFromServer() {
   try {
     showLoading(true);
-    // 60s 超时：避免大文件在网络差时无限挂起
+    // 180s 超时：避免大文件（列式压缩后约14MB）在国内访问 github.io 慢时无限挂起
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 60000);
+    const timer = setTimeout(() => ctrl.abort(), 180000);
     let resp;
     try {
       // 加时间戳 cache-buster：绕过浏览器/CDN 缓存，确保推送后立刻拿到最新 data.json
       resp = await fetch('data.json?v=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
     } catch (e) {
-      if (e.name === 'AbortError') throw new Error('加载超时（>60s）：可能是网络慢或 data.json 未部署');
+      if (e.name === 'AbortError') throw new Error('加载超时（>180s）：可能是网络慢或 data.json 未部署');
       throw new Error('网络请求失败：' + (e.message || e));
     } finally {
       clearTimeout(timer);
     }
     if (!resp.ok) throw new Error('HTTP ' + resp.status + '（' + (resp.status === 404 ? 'data.json 未找到，请确认每日脚本已生成并推送' : resp.statusText) + '）');
     const data = await resp.json();
+    // 列式紧凑格式还原：data.headers + 数组行 → 对象数组（与旧版逐行对象兼容）
+    if (Array.isArray(data.headers) && Array.isArray(data.rows) && data.rows.length && Array.isArray(data.rows[0])) {
+      const h = data.headers;
+      data.rows = data.rows.map(a => {
+        const o = {};
+        for (let i = 0; i < h.length; i++) o[h[i]] = a[i];
+        return o;
+      });
+    }
     const rows = Array.isArray(data.rows) ? data.rows : [];
     if (!rows.length) throw new Error('data.json 无记录');
     dataMeta = data.meta || {};

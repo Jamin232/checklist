@@ -182,6 +182,10 @@ def build(excel_path, output_path):
     # 2GB / GitHub 拒收）。这里遇「连续 N 行全空」即判定数据区结束并 break。
     # 真实业务跟踪表不会连续 50 行空白，而尾部空行是百万级，阈值安全。
     EMPTY_ROW_LIMIT = 50
+    # 列式紧凑格式：列头只写一次（headers），每行改为「值数组」，
+    # 列头重复 27000+ 次 → 0 次，data.json 体积约降 57%（32MB→14MB），
+    # 大幅缓解 github.io 在国内访问大文件易超时的问题。前端 loadFromServer
+    # 会在加载后把数组行还原为对象，chayan.js / daily.js 读取逻辑无需改动。
     for r in rows_iter:
         # 补齐到表头长度
         row = list(r) + [""] * (len(header) - len(r))
@@ -194,8 +198,8 @@ def build(excel_path, output_path):
         empty_streak = 0
         obj = {h: clean_cell(row[i] if i < len(row) else "") for i, h in enumerate(header)}
         # 仅保留看板实际使用的列（其余为跟踪表冗余列，可省约 65% 体积）
-        obj = {k: obj.get(k, "") for k in COLUMN_ALLOWLIST}
-        records.append(obj)
+        arr = [obj.get(k, "") for k in COLUMN_ALLOWLIST]
+        records.append(arr)
         # 跟踪最大发货日（仅当该单元格是真实日期）
         if ship_idx is not None:
             sv = row[ship_idx] if ship_idx < len(row) else None
@@ -218,7 +222,8 @@ def build(excel_path, output_path):
         "dataDate": data_date,
         "maxShipDate": max_ship.strftime("%Y-%m-%d") if max_ship else "",
     }
-    out = {"meta": meta, "rows": records}
+    # 列式紧凑格式：headers 写一次 + 数组行，体积远小于逐行对象
+    out = {"meta": meta, "headers": COLUMN_ALLOWLIST, "rows": records}
     with open(output_path, "w", encoding="utf-8") as f:
         # 紧凑分隔符，减小体积（前端 fetch 后 JSON.parse 仍很快）
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
