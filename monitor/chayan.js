@@ -1283,6 +1283,29 @@ function showDataLoadError(msg) {
       loadFromServer();
     });
   }
+  // 应急上传：选择本地 xlsx → 浏览器内解析，完全不依赖 data.json / 服务器（github.io 不稳时的兜底）
+  const fileInput = document.getElementById('fallbackFileInput');
+  if (fileInput && !fileInput._bound) {
+    fileInput._bound = true;
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      try {
+        showLoading(true);
+        const rows = await readExcel(f);
+        if (!rows.length) { showToast('⚠️ 文件无数据', 'warn'); showLoading(false); return; }
+        dataMeta = { sourceFile: f.name, dataDate: '', generatedAt: '本地上传' };
+        const box = document.getElementById('loadError');
+        if (box) box.style.display = 'none';
+        await loadAndProcessRows(rows, dataMeta);
+        showLoading(false);
+        showToast('✓ 已从本地文件加载 ' + rows.length + ' 行（应急模式，无昨日对比）', 'success');
+      } catch (err) {
+        showLoading(false);
+        showToast('❌ 解析失败：' + (err && err.message ? err.message : err), 'warn');
+      }
+    });
+  }
   if (typeof showToast === 'function') showToast('⚠️ 无法自动加载 data.json：' + (msg || ''), 'warn');
 }
 
