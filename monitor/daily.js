@@ -340,7 +340,8 @@ const Daily = (function () {
         isAbnormal,
         transitDays, overRefLead, overdue, onTime, domInsp, ovsInsp,
         isKaiCha, isSuoPei, isLiPei, lossClaim, isDelayed,
-        bizMonth, domInspMonth, destInspMonth, arrMonth
+        bizMonth, domInspMonth, destInspMonth, arrMonth,
+        isFast: ['空运', '快递'].includes(safeStr(row[map.type]))
       });
     }
     return list;
@@ -1144,6 +1145,18 @@ const Daily = (function () {
     const topCh = Object.entries(chTotals).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
     // 全量合计（含未进 Top 的"其他"渠道），用于汇总占比
     const gtAll = Object.values(chTotals).reduce((s, v) => s + v, 0);
+    // 快渠道(快递+空运)按维度聚合 —— 用于"快渠道占比"监控列
+    const FAST_THRESHOLD = 30; // 快渠道占比监控阈值(%)，超过红色标记
+    const dimFast = {};
+    let fastTotalAll = 0;
+    for (const r of pool) {
+      const dk = dimFn(r);
+      if (!dk) continue;
+      if (r.isFast) {
+        dimFast[dk] = (dimFast[dk] || 0) + metricFn(r);
+        fastTotalAll += metricFn(r);
+      }
+    }
 
     // 饼图：全量渠道大类结构
     const pie = topCh.map(ck => ({ name: ck, value: fmtMetric(chTotals[ck]) }));
@@ -1161,7 +1174,7 @@ const Daily = (function () {
       const dims = Object.keys(dimMap).sort();
       let html = `<tr><th>${{ week: '周', month: '月', customer: '客户(事业部)' }[costDim]}</th>`;
       topCh.forEach(ck => html += `<th>${ck}</th>`);
-      html += `<th>合计(${metricName})</th><th>占比</th></tr>`;
+      html += `<th>合计(${metricName})</th><th>占比</th><th>快渠道占比<br><span style="font-weight:400;font-size:10px;color:#999">快递+空运 · &gt;${FAST_THRESHOLD}%红</span></th></tr>`;
       for (const dk of dims) {
         const m = dimMap[dk];
         const tot = topCh.reduce((s, ck) => s + (m[ck] || 0), 0);
@@ -1172,21 +1185,26 @@ const Daily = (function () {
           html += `<td>${fmtMetric(v)}<br><span class="pct">${pct}%</span></td>`;
         });
         const totPct = gtAll > 0 ? (tot / gtAll * 100).toFixed(1) : '0';
-        html += `<td><b>${fmtMetric(tot)}</b></td><td><b>${totPct}%</b></td></tr>`;
+        const fastV = dimFast[dk] || 0;
+        const fastPct = tot > 0 ? (fastV / tot * 100) : 0;
+        const fastCls = fastPct > FAST_THRESHOLD ? ' style="color:#e53935;font-weight:700"' : '';
+        html += `<td><b>${fmtMetric(tot)}</b></td><td><b>${totPct}%</b></td><td${fastCls}>${fastPct.toFixed(1)}%</td></tr>`;
       }
       // 总计行：各渠道占全量比例
+      const fastAllPct = gtAll > 0 ? (fastTotalAll / gtAll * 100) : 0;
+      const fastAllCls = fastAllPct > FAST_THRESHOLD ? ' style="color:#e53935;font-weight:700"' : '';
       html += `<tr style="font-weight:700;background:#f3f6fa"><td>全量占比</td>`;
       topCh.forEach(ck => {
         const v = chTotals[ck];
         const p = gtAll > 0 ? (v / gtAll * 100).toFixed(1) : '0';
         html += `<td>${fmtMetric(v)}<br><span class="pct">${p}%</span></td>`;
       });
-      html += `<td><b>${fmtMetric(gtAll)}</b></td><td><b>100%</b></td></tr>`;
+      html += `<td><b>${fmtMetric(gtAll)}</b></td><td><b>100%</b></td><td${fastAllCls}>${fastAllPct.toFixed(1)}%</td></tr>`;
       tb.innerHTML = html;
     }
     const note = document.getElementById('cost-note');
     if (note) note.innerHTML = '本模块展示<b>渠道大类结构占比</b>（按' + metricName + '，数据来自跟踪表' + (costMonthFilter !== '全部' ? costMonthFilter + '月' : '全期') + (costCustomerFilter !== '全部' ? ' · ' + costCustomerFilter : '') + '）。维度：' +
-      ({ week: '中国日历周', month: '月度', customer: '客户(事业部)' }[costDim]) + '；占比为该渠道占对应合计的比例。';
+      ({ week: '中国日历周', month: '月度', customer: '客户(事业部)' }[costDim]) + '；占比为该渠道占对应合计的比例。新增<b>快渠道占比</b>列（快渠道=快递+空运），按' + metricName + '计算，&gt;' + FAST_THRESHOLD + '% 红色预警（监控阈值）。';
   }
 
   // ============================================================
