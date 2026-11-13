@@ -211,6 +211,7 @@ const Daily = (function () {
       country: find('国家'),
       weight: find('毛重'),
       vol: find('方数CBM'),
+      pieces: find('件数'),
       ref: find('参考时效'),
       arr: find('到港日期'),
       pay: find('赔付')
@@ -322,6 +323,7 @@ const Daily = (function () {
         country: safeStr(row[map.country]),
         weight: safeNum(row[map.weight]),
         volume: safeNum(row[map.vol]),
+        pieces: safeNum(row[map.pieces]),
         shipDate,
         signTime,
         latestDeliver,
@@ -1066,8 +1068,9 @@ const Daily = (function () {
   // ============================================================
   // ⑤ 成本速览（渠道结构占比）
   // ============================================================
-  let costDim = 'week', costMetric = 'tickets';
+  let costDim = 'month', costMetric = 'pieces';
   let costCustomerFilter = '全部';
+  let costMonthFilter = '全部';
   function setCostDim(d) { costDim = d; document.querySelectorAll('.cost-dim-btn').forEach(b => b.classList.toggle('active', b.dataset.dim === d)); renderCost(); }
   function setCostMetric(m) { costMetric = m; document.querySelectorAll('.cost-metric-btn').forEach(b => b.classList.toggle('active', b.dataset.metric === m)); renderCost(); }
   function setCostCustomer(c) {
@@ -1076,7 +1079,14 @@ const Daily = (function () {
     if (sel) sel.value = c;
     renderCost();
   }
+  function setCostMonth(m) {
+    costMonthFilter = m;
+    const sel = document.getElementById('costMonthSelect');
+    if (sel) sel.value = m;
+    renderCost();
+  }
   function resetCostCustomer() { setCostCustomer('全部'); }
+  function resetCostMonth() { setCostMonth('全部'); }
 
   function renderCost() {
     if (!todayRecs) { noData('cost-chart'); noData('cost-table'); return; }
@@ -1089,8 +1099,18 @@ const Daily = (function () {
       sel.value = (cur === '全部' || customers.includes(cur)) ? cur : '全部';
       costCustomerFilter = sel.value;
     }
-    // 事业部筛选器优先于 costDim=customer；选中事业部后，costDim 仍可切换 周/月
-    const pool = costCustomerFilter === '全部' ? todayRecs : todayRecs.filter(r => r.customer === costCustomerFilter);
+    // 月份筛选下拉（选日期）
+    const selM = document.getElementById('costMonthSelect');
+    if (selM) {
+      const months = [...new Set(todayRecs.map(r => r.bizMonth).filter(Boolean))].sort();
+      const curM = selM.value || costMonthFilter;
+      selM.innerHTML = '<option value="全部">全部</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
+      selM.value = (curM === '全部' || months.includes(curM)) ? curM : '全部';
+      costMonthFilter = selM.value;
+    }
+    // 事业部 + 月份 双重过滤；选中事业部后，costDim 仍可切换 周/月
+    let pool = costCustomerFilter === '全部' ? todayRecs : todayRecs.filter(r => r.customer === costCustomerFilter);
+    if (costMonthFilter !== '全部') pool = pool.filter(r => r.bizMonth === costMonthFilter);
     if (!pool.length) { noData('cost-chart'); noData('cost-table'); return; }
     const dimFn = {
       week: r => r.shipDate ? getWeekKey(r.shipDate) : '未知',
@@ -1099,10 +1119,13 @@ const Daily = (function () {
     }[costDim];
     const metricFn = {
       tickets: r => r.ticketCount,
+      pieces: r => r.pieces,
       weight: r => r.weight * r.ticketCount,
       volume: r => r.volume * r.ticketCount
     }[costMetric];
-    const metricName = { tickets: '票数', weight: '吨数', volume: '方数' }[costMetric];
+    const metricName = { tickets: '票数', pieces: '件数', weight: '吨数', volume: '方数' }[costMetric];
+    // 计数类指标(票数/件数)取整，度量类(吨/方)保留1位
+    const fmtMetric = v => (costMetric === 'tickets' || costMetric === 'pieces') ? Math.round(v) : (+v.toFixed(1));
 
     // 按渠道大类聚合（非素芸物流渠道）
     const byCh = groupSum(pool, r => r.channelCategory || '未知');
@@ -1119,11 +1142,13 @@ const Daily = (function () {
     const chTotals = {};
     Object.values(dimMap).forEach(m => Object.entries(m).forEach(([ck, v]) => chTotals[ck] = (chTotals[ck] || 0) + v));
     const topCh = Object.entries(chTotals).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
+    // 全量合计（含未进 Top 的"其他"渠道），用于汇总占比
+    const gtAll = Object.values(chTotals).reduce((s, v) => s + v, 0);
 
     // 饼图：全量渠道大类结构
-    const pie = topCh.map(ck => ({ name: ck, value: +chTotals[ck].toFixed(1) }));
+    const pie = topCh.map(ck => ({ name: ck, value: fmtMetric(chTotals[ck]) }));
     const other = Object.entries(chTotals).filter(([ck]) => !topCh.includes(ck)).reduce((s, [, v]) => s + v, 0);
-    if (other > 0) pie.push({ name: '其他', value: +other.toFixed(1) });
+    if (other > 0) pie.push({ name: '其他', value: fmtMetric(other) });
     setOpt('cost-chart', {
       tooltip: { trigger: 'item', formatter: p => `${p.name}<br>${metricName}：${p.value}（${(p.percent).toFixed(1)}%）` },
       legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10 } },
@@ -1136,7 +1161,7 @@ const Daily = (function () {
       const dims = Object.keys(dimMap).sort();
       let html = `<tr><th>${{ week: '周', month: '月', customer: '客户(事业部)' }[costDim]}</th>`;
       topCh.forEach(ck => html += `<th>${ck}</th>`);
-      html += `<th>合计(${metricName})</th></tr>`;
+      html += `<th>合计(${metricName})</th><th>占比</th></tr>`;
       for (const dk of dims) {
         const m = dimMap[dk];
         const tot = topCh.reduce((s, ck) => s + (m[ck] || 0), 0);
@@ -1144,20 +1169,24 @@ const Daily = (function () {
         topCh.forEach(ck => {
           const v = m[ck] || 0;
           const pct = tot > 0 ? (v / tot * 100).toFixed(0) : '0';
-          html += `<td>${metricName === '票数' ? v : v.toFixed(1)}<br><span class="pct">${pct}%</span></td>`;
+          html += `<td>${fmtMetric(v)}<br><span class="pct">${pct}%</span></td>`;
         });
-        html += `<td><b>${metricName === '票数' ? tot : tot.toFixed(1)}</b></td></tr>`;
+        const totPct = gtAll > 0 ? (tot / gtAll * 100).toFixed(1) : '0';
+        html += `<td><b>${fmtMetric(tot)}</b></td><td><b>${totPct}%</b></td></tr>`;
       }
-      // 总计行
-      html += `<tr style="font-weight:700;background:#f3f6fa"><td>全量</td>`;
-      topCh.forEach(ck => html += `<td>${metricName === '票数' ? +chTotals[ck].toFixed(0) : chTotals[ck].toFixed(1)}</td>`);
-      const gt = topCh.reduce((s, ck) => s + chTotals[ck], 0);
-      html += `<td>${metricName === '票数' ? +gt.toFixed(0) : gt.toFixed(1)}</td></tr>`;
+      // 总计行：各渠道占全量比例
+      html += `<tr style="font-weight:700;background:#f3f6fa"><td>全量占比</td>`;
+      topCh.forEach(ck => {
+        const v = chTotals[ck];
+        const p = gtAll > 0 ? (v / gtAll * 100).toFixed(1) : '0';
+        html += `<td>${fmtMetric(v)}<br><span class="pct">${p}%</span></td>`;
+      });
+      html += `<td><b>${fmtMetric(gtAll)}</b></td><td><b>100%</b></td></tr>`;
       tb.innerHTML = html;
     }
     const note = document.getElementById('cost-note');
-    if (note) note.innerHTML = '⚠️ 跟踪表无运费数据，本模块仅展示<b>渠道大类结构占比</b>（按' + metricName + '），用以间接反映成本分布。维度：' +
-      ({ week: '中国日历周', month: '月度', customer: '客户(事业部)' }[costDim]);
+    if (note) note.innerHTML = '本模块展示<b>渠道大类结构占比</b>（按' + metricName + '，数据来自跟踪表' + (costMonthFilter !== '全部' ? costMonthFilter + '月' : '全期') + (costCustomerFilter !== '全部' ? ' · ' + costCustomerFilter : '') + '）。维度：' +
+      ({ week: '中国日历周', month: '月度', customer: '客户(事业部)' }[costDim]) + '；占比为该渠道占对应合计的比例。';
   }
 
   // ============================================================
