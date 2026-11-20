@@ -943,9 +943,10 @@ const Daily = (function () {
     const newInspect = pool.filter(r =>
       (r.domInspectDate && withinLastNDays(r.domInspectDate, TODAY, 1)) ||
       (r.destInspectDate && withinLastNDays(r.destInspectDate, TODAY, 1)));
-    // 退运明细：退运中 = 货物状态含"查验中" 且 状态备注含"退运"。
-    // 退运已结束的单（动态已回运输中/已签收/已送达/已妥投等）不再计入。
-    const isReturnActive = r => r.goodsStatus.includes('查验中') && r.remark.includes('退运');
+    // 退运明细（用户裁定 2026-11-20）：只认货物状态含"退运中"（如"11/20退运中"）。
+    // 不再要求"查验中"+备注含退运；备注仅作摘要展示，不参与判定。
+    // 退运已结束的单（状态回运输中/已签收/已送达，或"已退运"）自动不含"退运中"，不计入。
+    const isReturnActive = r => r.goodsStatus.includes('退运中');
     const tuiyun = pool.filter(isReturnActive);
 
     let deltaHtml = '';
@@ -1046,7 +1047,7 @@ const Daily = (function () {
         `</tbody></table>`;
     }
 
-    // —— 退运明细：退运中 = 货物状态含"查验中" 且 状态备注含"退运"；退运已结束(状态回运输中/已签收/已送达等)不计入 ——
+    // —— 退运明细：只认货物状态含"退运中"（用户裁定 2026-11-20）——
     const tyTb = document.getElementById('ab-returnTable');
     if (tyTb) {
       const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
